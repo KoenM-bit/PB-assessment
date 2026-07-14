@@ -64,6 +64,8 @@ jobs:
       CONFIRM_PROMOTE: ${{ github.event_name == 'workflow_dispatch' && inputs.command == 'promote-to-production' && inputs.confirm_promote == 'yes' && 'yes' || '' }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-python@v5
         with:
@@ -91,10 +93,13 @@ jobs:
           # Push to staging: only retrain when ml/ changed; otherwise sync bundle jobs only.
           BEFORE="${{ github.event.before }}"
           AFTER="${{ github.sha }}"
-          if [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
-            CHANGED="$(git diff --name-only HEAD~1 "$AFTER" 2>/dev/null || true)"
-          else
+          if [ -n "$BEFORE" ] && [ "$BEFORE" != "0000000000000000000000000000000000000000" ] \
+            && git cat-file -e "${BEFORE}^{commit}" 2>/dev/null; then
             CHANGED="$(git diff --name-only "$BEFORE" "$AFTER")"
+          elif git rev-parse HEAD~1 >/dev/null 2>&1; then
+            CHANGED="$(git diff --name-only HEAD~1 HEAD)"
+          else
+            CHANGED="$(git show --name-only --pretty=format: HEAD | sed '/^$/d')"
           fi
           echo "Changed files:"
           echo "$CHANGED"
