@@ -141,10 +141,13 @@ Then merge `staging` → `master` for the Netlify production frontend (already a
 
 On every push to `staging` that touches `ml/` or `databricks/`:
 
-1. Deploy Databricks Asset Bundle (`staging` target)
-2. Build & upload `house_price_ml` wheel to `/Workspace/Shared/`
-3. Run **Full ML Pipeline** job: bronze → silver → gold → train → evaluate
-4. Deploy `house-price-serving` from registry `@challenger` (no local train)
+| Files changed | Auto action |
+|---------------|-------------|
+| `ml/**` only (or including ml) | Full `staging-pipeline` (retrain + deploy serving) |
+| `databricks/**` or scripts only | `bundle-deploy` only (sync jobs + wheel artifact, **no retrain**) |
+| Frontend / docs only | Nothing (Netlify CI runs separately) |
+
+Full pipeline is also available manually: **Actions → Databricks → staging-pipeline**.
 
 ---
 

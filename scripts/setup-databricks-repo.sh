@@ -4,7 +4,15 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 REPO_URL="${DATABRICKS_REPO_URL:-}"
-REPO_PATH="${DATABRICKS_REPO_PATH:-/Repos/$(whoami 2>/dev/null || echo user)/PB-assessment}"
+REPO_PATH="${DATABRICKS_REPO_PATH:-}"
+
+if [ -z "$REPO_PATH" ] && [ -n "${DATABRICKS_HOST:-}" ] && command -v databricks >/dev/null 2>&1; then
+  USER_EMAIL="$(databricks current-user me -o json 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin).get('userName',''))" 2>/dev/null || true)"
+  if [ -n "$USER_EMAIL" ]; then
+    REPO_PATH="/Repos/${USER_EMAIL}/PB-assessment"
+  fi
+fi
+REPO_PATH="${REPO_PATH:-/Repos/PB-assessment}"
 
 if [ -f "$ROOT/.env" ]; then
   set -a
@@ -20,8 +28,21 @@ fi
 
 if [ -z "$REPO_URL" ]; then
   REMOTE="$(git -C "$ROOT" remote get-url origin 2>/dev/null || true)"
-  if [ -n "$REMOTE" ]; then
-    REPO_URL="$REMOTE"
+  # Databricks Repos requires HTTPS GitHub URL (not SSH).
+  case "$REMOTE" in
+    git@github.com:*)
+      REPO_URL="https://github.com/${REMOTE#git@github.com:}"
+      REPO_URL="${REPO_URL%.git}.git"
+      ;;
+    git@github-default:*)
+      REPO_URL="https://github.com/${REMOTE#git@github-default:}"
+      REPO_URL="${REPO_URL%.git}.git"
+      ;;
+    *)
+      REPO_URL="$REMOTE"
+      ;;
+  esac
+  if [ -n "$REPO_URL" ]; then
     echo "Using git remote: $REPO_URL"
   else
     echo "Set DATABRICKS_REPO_URL to your GitHub HTTPS URL, e.g.:" >&2

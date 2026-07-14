@@ -4,7 +4,8 @@ bundle:
 artifacts:
   house_price_ml:
     type: whl
-    build: pip wheel . -w ../databricks/dist --no-deps -q
+    # Build runs with cwd = path (../ml); wheel must land in ml/dist for bundle upload.
+    build: pip wheel . -w dist --no-deps -q
     path: ../ml
 
 variables:

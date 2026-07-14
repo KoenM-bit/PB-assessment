@@ -42,6 +42,7 @@ on:
       - "databricks/**"
       - "ml/**"
       - "scripts/databricks-ci.sh"
+      - "scripts/databricks-bundle-deploy.sh"
       - "scripts/upload-ml-wheel.sh"
       - "scripts/deploy-serving.py"
       - "scripts/promote-to-production.py"
@@ -53,7 +54,7 @@ concurrency:
 
 jobs:
   databricks:
-    name: ${{ github.event_name == 'workflow_dispatch' && inputs.command || 'staging-pipeline' }}
+    name: ${{ github.event_name == 'workflow_dispatch' && inputs.command || 'auto' }}
     runs-on: ubuntu-latest
     timeout-minutes: 90
     env:
@@ -72,6 +73,9 @@ jobs:
 
       - uses: databricks/setup-cli@main
 
+      - name: Install build tools for ML wheel
+        run: pip install pip build hatchling
+
       - name: Install ML package (for local-train deploy path)
         run: pip install -e "ml/[dev]"
 
@@ -81,10 +85,28 @@ jobs:
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "command=${{ inputs.command }}" >> "$GITHUB_OUTPUT"
             echo "target=${{ inputs.target }}" >> "$GITHUB_OUTPUT"
-          else
-            echo "command=staging-pipeline" >> "$GITHUB_OUTPUT"
-            echo "target=staging" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
+
+          # Push to staging: only retrain when ml/ changed; otherwise sync bundle jobs only.
+          BEFORE="${{ github.event.before }}"
+          AFTER="${{ github.sha }}"
+          if [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
+            CHANGED="$(git diff --name-only HEAD~1 "$AFTER" 2>/dev/null || true)"
+          else
+            CHANGED="$(git diff --name-only "$BEFORE" "$AFTER")"
+          fi
+          echo "Changed files:"
+          echo "$CHANGED"
+
+          if echo "$CHANGED" | grep -q '^ml/'; then
+            echo "command=staging-pipeline" >> "$GITHUB_OUTPUT"
+            echo "Auto: ml/ changed → full staging pipeline" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "command=bundle-deploy" >> "$GITHUB_OUTPUT"
+            echo "Auto: config-only change → bundle-deploy only (no retrain)" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          echo "target=staging" >> "$GITHUB_OUTPUT"
 
       - name: Gate production promotion
         if: steps.cmd.outputs.command == 'promote-to-production' || steps.cmd.outputs.command == 'production-pipeline'
