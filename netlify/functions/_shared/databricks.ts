@@ -40,6 +40,40 @@ function escapeSql(value: string): string {
   return value.replace(/'/g, "''");
 }
 
+function isDatabricksHtmlError(text: string): boolean {
+  const lower = text.toLowerCase();
+  return (
+    lower.includes("<html") &&
+    (lower.includes("inactivity timeout") ||
+      lower.includes("gateway timeout") ||
+      lower.includes("service unavailable"))
+  );
+}
+
+function waitFor(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function readDatabricksJson<T>(response: Response, label: string): Promise<T> {
+  const text = await response.text();
+  if (isDatabricksHtmlError(text)) {
+    throw new Error(`${label}: Databricks warehouse or endpoint timed out (cold start)`);
+  }
+  if (!response.ok) {
+    throw new Error(`${label} failed: ${response.status} ${text.slice(0, 200)}`);
+  }
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    throw new Error(`${label}: invalid JSON response (${text.slice(0, 120)})`);
+  }
+}
+
+function sqlWaitTimeout(config: AppConfig): string {
+  const seconds = Math.max(5, Math.min(50, Math.floor(config.sqlMaxWaitMs / 1000)));
+  return `${seconds}s`;
+}
+
 export function logPrediction(record: StoredPrediction): void {
   predictions.unshift(record);
 }
@@ -174,6 +208,32 @@ export async function invokeServing(
     return mockPredict(payload);
   }
 
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    try {
+      return await invokeServingOnce(config, payload);
+    } catch (err) {
+      lastError = err;
+      const message = err instanceof Error ? err.message : String(err);
+      const retryable =
+        message.includes("cold start") ||
+        message.includes("timed out") ||
+        message.includes("Serving failed: 5") ||
+        message.includes("Serving failed: 503");
+      if (!retryable || attempt === 2) {
+        throw err;
+      }
+      console.warn(`Serving attempt ${attempt} failed, retrying:`, message);
+      await waitFor(3000);
+    }
+  }
+  throw lastError;
+}
+
+async function invokeServingOnce(
+  config: AppConfig,
+  payload: ModelPredictPayload,
+): Promise<{ predicted_price: number; model_version: string; warnings: string[] }> {
   const url = `${config.databricksHost}/serving-endpoints/${config.servingEndpoint}/invocations`;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), config.servingTimeoutMs);
@@ -191,14 +251,10 @@ export async function invokeServing(
       signal: controller.signal,
     });
 
-    if (!response.ok) {
-      throw new Error(`Serving failed: ${response.status}`);
-    }
-
-    const result = await response.json();
+    const result = await readDatabricksJson<Record<string, unknown>>(response, "Serving");
     const predictionRows = result.predictions || result;
     const row = Array.isArray(predictionRows) ? predictionRows[0] : predictionRows;
-    const price = row?.predicted_price ?? row;
+    const price = (row as Record<string, unknown>)?.predicted_price ?? row;
     const modelVersion =
       result.model_version ||
       result.databricks_model_version ||
@@ -208,7 +264,7 @@ export async function invokeServing(
     return {
       predicted_price: Number(price),
       model_version: String(modelVersion),
-      warnings: parsePredictionWarnings(row?.warnings),
+      warnings: parsePredictionWarnings((row as Record<string, unknown>)?.warnings),
     };
   } finally {
     clearTimeout(timeout);
@@ -277,6 +333,38 @@ function mockPredict(
   };
 }
 
+export async function warmSqlWarehouse(config: AppConfig): Promise<void> {
+  await executeSql(config, "SELECT 1 AS ok");
+}
+
+export async function executeSqlWithRetry(
+  config: AppConfig,
+  statement: string,
+  attempts = 3,
+): Promise<unknown> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await executeSql(config, statement);
+    } catch (err) {
+      lastError = err;
+      const message = err instanceof Error ? err.message : String(err);
+      const retryable =
+        message.includes("cold start") ||
+        message.includes("timed out") ||
+        message.includes("PENDING") ||
+        message.includes("SQL failed: 5") ||
+        message.includes("SQL failed: 502") ||
+        message.includes("SQL failed: 503");
+      if (!retryable || attempt === attempts) {
+        throw err;
+      }
+      console.warn(`SQL attempt ${attempt} failed, retrying:`, message);
+      await waitFor(attempt * 2000);
+    }
+  }
+  throw lastError;
+}
 export async function executeSql(config: AppConfig, statement: string): Promise<unknown> {
   if (config.useMockDatabricks) return null;
   const url = `${config.databricksHost}/api/2.0/sql/statements`;
@@ -289,11 +377,13 @@ export async function executeSql(config: AppConfig, statement: string): Promise<
     body: JSON.stringify({
       warehouse_id: config.sqlWarehouseId,
       statement,
-      wait_timeout: "30s",
+      wait_timeout: sqlWaitTimeout(config),
     }),
   });
-  if (!response.ok) throw new Error(`SQL failed: ${response.status}`);
-  const result = (await response.json()) as SqlStatementResult;
+  const result = await readDatabricksJson<SqlStatementResult>(response, "SQL");
+  if (result.status?.state === "PENDING") {
+    throw new Error("SQL still pending after wait_timeout (warehouse may be starting)");
+  }
   if (result.status?.state === "FAILED") {
     throw new Error(result.status.error?.message || "SQL statement failed");
   }

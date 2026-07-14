@@ -22,7 +22,9 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     throw new Error(
       text.includes("Function not found")
         ? "API unavailable. Run `make dev-full` from the project root (not `make dev` alone)."
-        : `Invalid API response: ${text.slice(0, 80)}`,
+        : text.toLowerCase().includes("inactivity timeout")
+          ? "Databricks timed out (warehouse or model endpoint waking up). Wait a moment and try again."
+          : `Invalid API response: ${text.slice(0, 80)}`,
     );
   }
 

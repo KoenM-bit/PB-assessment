@@ -8,6 +8,10 @@
   node_bundler = "esbuild"
   ignored_node_modules = []
 
+# Predict calls Databricks serving + SQL; allow cold-start headroom (free tier max 26s).
+[functions."predict"]
+  timeout = 26
+
 [build.environment]
   NODE_VERSION = "20"
 

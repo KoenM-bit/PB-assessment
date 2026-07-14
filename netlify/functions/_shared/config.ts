@@ -10,6 +10,7 @@ export interface AppConfig {
   minEvaluationSampleSize: number;
   demoWriteToken: string;
   servingTimeoutMs: number;
+  sqlMaxWaitMs: number;
   useMockDatabricks: boolean;
 }
 
@@ -25,7 +26,8 @@ export function getConfig(): AppConfig {
     modelAlias: process.env.MODEL_ALIAS || "challenger",
     minEvaluationSampleSize: parseInt(process.env.MIN_EVALUATION_SAMPLE_SIZE || "30", 10),
     demoWriteToken: process.env.DEMO_WRITE_TOKEN || "",
-    servingTimeoutMs: parseInt(process.env.SERVING_TIMEOUT_MS || "10000", 10),
+    servingTimeoutMs: parseInt(process.env.SERVING_TIMEOUT_MS || "30000", 10),
+    sqlMaxWaitMs: parseInt(process.env.SQL_MAX_WAIT_MS || "25000", 10),
     useMockDatabricks: process.env.USE_MOCK_DATABRICKS !== "false",
   };
 }

@@ -2,10 +2,11 @@ import type { Handler, HandlerEvent } from "@netlify/functions";
 import { v4 as uuidv4 } from "uuid";
 import { getConfig } from "./_shared/config.js";
 import {
-  executeSql,
+  executeSqlWithRetry,
   insertPredictionSql,
   logPrediction,
   newPredictionId,
+  warmSqlWarehouse,
 } from "./_shared/databricks.js";
 import { ApiError, handleError, successResponse } from "./_shared/errors.js";
 import { predictWithFallback } from "./_shared/fallback.js";
@@ -26,6 +27,11 @@ export const handler: Handler = async (event: HandlerEvent) => {
 
     const config = getConfig();
     const start = Date.now();
+    const warehouseWarmup = config.useMockDatabricks
+      ? Promise.resolve()
+      : warmSqlWarehouse(config).catch((err) => {
+          console.warn("SQL warehouse warmup failed (will retry on insert):", err);
+        });
     const result = await predictWithFallback(config, parsed.data, config.modelAlias);
     const latency = Date.now() - start;
 
@@ -54,7 +60,12 @@ export const handler: Handler = async (event: HandlerEvent) => {
 
     logPrediction(record);
     if (!config.useMockDatabricks) {
-      await executeSql(config, insertPredictionSql(config, record));
+      await warehouseWarmup;
+      try {
+        await executeSqlWithRetry(config, insertPredictionSql(config, record));
+      } catch (err) {
+        console.error("Failed to persist prediction to Databricks:", err);
+      }
     }
 
     return successResponse(
