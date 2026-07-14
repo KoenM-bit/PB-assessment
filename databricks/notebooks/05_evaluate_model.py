@@ -1,7 +1,5 @@
 # Databricks notebook source
-# Retrospective evaluation
-
-# MAGIC %run ./_install_wheel
+# Retrospective evaluation — wheel via serverless environment dependencies.
 
 # COMMAND ----------
 

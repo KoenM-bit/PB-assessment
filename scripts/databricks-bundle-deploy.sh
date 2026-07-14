@@ -32,8 +32,5 @@ echo "==> Validating bundle (target=${TARGET}, host=${DATABRICKS_HOST})"
 echo "==> Deploying bundle (target=${TARGET})"
 (cd "$ROOT/databricks" && databricks bundle deploy -t "$TARGET")
 
-echo ""
 echo "OK. Jobs are in Databricks → Workflows → Jobs & Pipelines."
-echo "Upload the ML wheel before running notebooks:"
-echo "  make upload-ml-wheel"
-echo "  # or: ./scripts/upload-ml-wheel.sh"
+echo "The ML wheel is built automatically during bundle deploy (artifacts.house_price_ml)."

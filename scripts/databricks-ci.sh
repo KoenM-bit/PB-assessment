@@ -101,7 +101,6 @@ case "$COMMAND" in
   staging-pipeline)
     require_token
     "$0" bundle-deploy staging
-    "$0" upload-wheel staging
     "$0" run-pipeline staging
     "$0" deploy-serving staging
     ;;

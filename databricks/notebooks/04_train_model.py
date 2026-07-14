@@ -1,7 +1,5 @@
 # Databricks notebook source
-# Train and register model in Unity Catalog
-
-# MAGIC %run ./_install_wheel
+# Train and register model in Unity Catalog — wheel via serverless environment dependencies.
 
 # COMMAND ----------
 

@@ -1,7 +1,6 @@
 # Databricks notebook source
 # Silver clean
-
-# MAGIC %run ./_install_wheel
+# Wheel installed via serverless environment dependencies (databricks.yml).
 
 # COMMAND ----------
 

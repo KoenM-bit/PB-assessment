@@ -1,7 +1,5 @@
 # Databricks notebook source
-# Gold features
-
-# MAGIC %run ./_install_wheel
+# Gold features — wheel via serverless environment dependencies (databricks.yml).
 
 # COMMAND ----------
 

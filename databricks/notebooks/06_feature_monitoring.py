@@ -1,7 +1,5 @@
 # Databricks notebook source
-# Feature monitoring
-
-# MAGIC %run ./_install_wheel
+# Feature monitoring — wheel via serverless environment dependencies.
 
 # COMMAND ----------
 
