@@ -1,58 +1,51 @@
-"""End-to-end staging test specification.
+"""End-to-end smoke tests against a live Netlify deployment.
 
-Run against staging deployment with:
-  STAGING_URL=https://staging.example.netlify.app pytest tests/e2e -v
-
-Locally, tests use mock mode via Netlify function imports.
+Run locally:
+  E2E_BASE_URL=https://staging--pb-assessment.netlify.app pytest tests/e2e -v
 """
 
 import os
 
 import pytest
 
-STAGING_URL = os.environ.get("STAGING_URL")
+from .helpers import (
+    PREDICT_TIMEOUT_S,
+    SAMPLE_PREDICT_PAYLOAD,
+    api_json_with_retry,
+    base_url,
+)
+
+LIVE_URL = os.environ.get("E2E_BASE_URL") or os.environ.get("STAGING_URL")
 
 
-@pytest.mark.skipif(not STAGING_URL, reason="STAGING_URL not set — document-only locally")
-def test_e2e_staging_prediction_flow():
-    """Full staging flow: predict → list → actual sale → monitoring."""
-    import json
-    import urllib.request
+@pytest.mark.skipif(not LIVE_URL, reason="E2E_BASE_URL / STAGING_URL not set")
+def test_e2e_monitoring_endpoint():
+    body = api_json_with_retry("/api/monitoring")
+    summary = body["data"]["summary"]
+    assert summary["total_predictions"] >= 0
+    assert summary["active_model_version"]
 
-    base = STAGING_URL.rstrip("/")
-    payload = {
-        "address": "Domstraat 12",
-        "postcode": "3512 JC",
-        "surface_area": 120,
-        "number_of_rooms": 5,
-        "number_of_bedrooms": 3,
-        "build_year": 1985,
-        "energy_label": "B",
-        "property_type": "terraced_house",
-        "garden": True,
-        "region": "Utrecht",
-        "latitude": 52.0907,
-        "longitude": 5.1214,
-    }
 
-    req = urllib.request.Request(
-        f"{base}/api/predict",
-        data=json.dumps(payload).encode(),
-        headers={"Content-Type": "application/json"},
+@pytest.mark.skipif(not LIVE_URL, reason="E2E_BASE_URL / STAGING_URL not set")
+def test_e2e_prediction_flow():
+    """predict → list predictions (full API path used by the UI)."""
+    predict = api_json_with_retry(
+        "/api/predict",
         method="POST",
+        payload=SAMPLE_PREDICT_PAYLOAD,
+        timeout_s=PREDICT_TIMEOUT_S,
+        attempts=3,
     )
-    with urllib.request.urlopen(req) as resp:
-        body = json.loads(resp.read())
-    assert body["data"]["predicted_price"] > 0
-    prediction_id = body["data"]["prediction_id"]
+    assert predict["data"]["predicted_price"] > 0
+    prediction_id = predict["data"]["prediction_id"]
 
-    with urllib.request.urlopen(f"{base}/api/predictions") as resp:
-        listings = json.loads(resp.read())
-    assert any(i["prediction_id"] == prediction_id for i in listings["data"]["items"])
+    listings = api_json_with_retry("/api/predictions")
+    items = listings["data"]["items"]
+    assert any(item["prediction_id"] == prediction_id for item in items)
 
 
-def test_e2e_mock_flow_documentation():
-    """Documents expected e2e steps for local/staging verification."""
+def test_e2e_flow_documentation():
+    """Documents expected manual verification steps beyond automated smoke."""
     steps = [
         "POST /api/predict with valid listing",
         "GET /api/predictions — verify prediction appears",
@@ -61,3 +54,5 @@ def test_e2e_mock_flow_documentation():
         "GET /api/monitoring — verify metrics with sample sizes",
     ]
     assert len(steps) == 5
+    if LIVE_URL:
+        assert base_url().startswith("http")

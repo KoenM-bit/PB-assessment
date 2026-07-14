@@ -1,6 +1,6 @@
 name: Staging Smoke Test
 
-# Optional post-deploy smoke test for the staging branch URL.
+# Post-deploy smoke test after Netlify finishes the staging branch deploy.
 on:
   workflow_dispatch:
   push:
@@ -10,9 +10,11 @@ jobs:
   smoke:
     runs-on: ubuntu-latest
     steps:
-      - name: Wait for Netlify staging deploy
-        run: sleep 90
-      - name: Check staging API
-        run: |
-          curl -fsS "https://staging--pb-assessment.netlify.app/api/monitoring" | head -c 300
-          echo ""
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Run E2E smoke tests
+        env:
+          E2E_BASE_URL: https://staging--pb-assessment.netlify.app
+        run: bash scripts/run-e2e-smoke.sh

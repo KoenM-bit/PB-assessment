@@ -36,7 +36,7 @@ test-integration:
 	pytest tests/integration -v
 
 test-e2e:
-	pytest tests/e2e -v
+	bash scripts/run-e2e-smoke.sh
 
 lint: lint-ml lint-web
 
