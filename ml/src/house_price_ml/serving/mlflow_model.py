@@ -131,8 +131,8 @@ def save_model_artifact(
     output_dir: str,
 ) -> None:
     """Log complete serving model to MLflow."""
-    from mlflow.models import infer_signature
     import mlflow.sklearn as mlflow_sklearn
+    from mlflow.models import infer_signature
 
     out = Path(output_dir)
     if out.exists():

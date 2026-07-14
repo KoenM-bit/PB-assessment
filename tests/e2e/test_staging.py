@@ -7,7 +7,6 @@ Locally, tests use mock mode via Netlify function imports.
 """
 
 import os
-import uuid
 
 import pytest
 
@@ -17,8 +16,8 @@ STAGING_URL = os.environ.get("STAGING_URL")
 @pytest.mark.skipif(not STAGING_URL, reason="STAGING_URL not set — document-only locally")
 def test_e2e_staging_prediction_flow():
     """Full staging flow: predict → list → actual sale → monitoring."""
-    import urllib.request
     import json
+    import urllib.request
 
     base = STAGING_URL.rstrip("/")
     payload = {
