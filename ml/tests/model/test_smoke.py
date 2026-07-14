@@ -1,19 +1,15 @@
 """Model smoke and regression tests."""
 
-from pathlib import Path
 
+import mlflow.pyfunc
 import numpy as np
 import pandas as pd
 import pytest
 
 from house_price_ml.data.synthetic import generate_listings
-from house_price_ml.features.aggregates import silver_to_gold_features
-from house_price_ml.data.silver import bronze_to_silver
 from house_price_ml.models.baseline import BusinessBaseline
 from house_price_ml.models.train import train
-from house_price_ml.serving.mlflow_model import build_sklearn_pipeline, save_model_artifact
 from house_price_ml.serving.pyfunc_model import HousePriceModel  # noqa: F401 — tests
-import mlflow.pyfunc
 
 
 @pytest.fixture(scope="module")

@@ -6,10 +6,10 @@ import numpy as np
 import pytest
 
 from house_price_ml.data.validation import validate_listing
+from house_price_ml.evaluation.metrics import bias, compute_metrics, mae, mape, rmse
 from house_price_ml.features.energy import energy_label_to_score
 from house_price_ml.features.geo import distance_to_city_centre, haversine_km
 from house_price_ml.features.pipeline import compute_row_features
-from house_price_ml.evaluation.metrics import bias, compute_metrics, mae, mape, rmse
 
 
 def test_haversine_amsterdam_utrecht():

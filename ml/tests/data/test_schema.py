@@ -5,7 +5,6 @@ import pandas as pd
 from house_price_ml.data.silver import bronze_to_silver
 from house_price_ml.data.synthetic import generate_listings
 
-
 REQUIRED_BRONZE_COLUMNS = [
     "listing_id",
     "region",

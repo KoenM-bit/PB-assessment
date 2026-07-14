@@ -1,8 +1,8 @@
 """Model regression tests against golden dataset."""
 
+import json
 from pathlib import Path
 
-import json
 import pytest
 
 from house_price_ml.models.train import train

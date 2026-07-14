@@ -71,7 +71,6 @@ def train(data_path: Path, model_type: str = "random_forest", output_dir: Path |
     wf_maes = []
     for tr, val in splits:
         bl = BusinessBaseline().fit(tr)
-        X_v = raw_to_feature_frame(val.to_dict("records"))
         y_v = val["label_sale_price"].values.astype(float)
         wf_maes.append(compute_metrics(y_v, bl.predict(val))["mae"])
 

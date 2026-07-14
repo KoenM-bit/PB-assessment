@@ -5,7 +5,6 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
-
 from house_price_ml.data.synthetic import generate_listings
 from house_price_ml.data.validation import validate_prediction_request
 from house_price_ml.features.pipeline import compute_row_features, raw_to_feature_frame
