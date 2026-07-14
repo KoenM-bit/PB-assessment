@@ -16,6 +16,6 @@ except Exception:
 df = generate_listings(n_rows)
 df["source_file"] = "synthetic"
 df["raw_payload"] = None
-spark.createDataFrame(df).write.format("delta").mode("append").saveAsTable(
-    f"{catalog}.bronze.listings_raw"
-)
+spark.createDataFrame(df).write.format("delta").mode("append").option(
+    "mergeSchema", "true"
+).saveAsTable(f"{catalog}.bronze.listings_raw")
