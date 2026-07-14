@@ -86,6 +86,14 @@ fetch-serving-logs:
 	chmod +x scripts/fetch-serving-logs.py
 	cd ml && python ../scripts/fetch-serving-logs.py
 
+databricks-bundle-deploy:
+	chmod +x scripts/databricks-bundle-deploy.sh
+	./scripts/databricks-bundle-deploy.sh staging
+
+databricks-bundle-deploy-prod:
+	chmod +x scripts/databricks-bundle-deploy.sh
+	./scripts/databricks-bundle-deploy.sh prod
+
 netlify-build:
 	chmod +x scripts/netlify-build.sh
 	./scripts/netlify-build.sh

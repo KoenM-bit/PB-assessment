@@ -4,8 +4,13 @@ bundle:
 variables:
   catalog:
     description: Unity Catalog name
+    default: house_price_staging
   model_alias:
     description: Model alias for serving (champion/challenger)
+    default: challenger
+
+# Workspace host: set DATABRICKS_HOST in the environment (or use `databricks auth login`).
+# Databricks bundles do not allow ${var.*} interpolation on workspace.host.
 
 targets:
   staging:
@@ -14,63 +19,102 @@ targets:
     variables:
       catalog: house_price_staging
       model_alias: challenger
-    workspace:
-      host: ${var.databricks_host}
 
   prod:
     mode: production
     variables:
       catalog: house_price_prod
       model_alias: champion
-    workspace:
-      host: ${var.databricks_host}
 
 resources:
   jobs:
     bronze_ingest:
       name: "[${bundle.target}] Bronze Ingest"
+      environments:
+        - environment_key: serverless
+          spec:
+            client: "2"
       tasks:
         - task_key: ingest
+          environment_key: serverless
           notebook_task:
             notebook_path: ./notebooks/01_bronze_ingest.py
+            base_parameters:
+              catalog: ${var.catalog}
 
     silver_clean:
       name: "[${bundle.target}] Silver Clean"
+      environments:
+        - environment_key: serverless
+          spec:
+            client: "2"
       tasks:
         - task_key: clean
+          environment_key: serverless
           notebook_task:
             notebook_path: ./notebooks/02_silver_clean.py
+            base_parameters:
+              catalog: ${var.catalog}
 
     gold_features:
       name: "[${bundle.target}] Gold Features"
+      environments:
+        - environment_key: serverless
+          spec:
+            client: "2"
       tasks:
         - task_key: features
+          environment_key: serverless
           notebook_task:
             notebook_path: ./notebooks/03_gold_features.py
+            base_parameters:
+              catalog: ${var.catalog}
 
     train_model:
       name: "[${bundle.target}] Train Model"
+      environments:
+        - environment_key: serverless
+          spec:
+            client: "2"
       tasks:
         - task_key: train
+          environment_key: serverless
           notebook_task:
             notebook_path: ./notebooks/04_train_model.py
+            base_parameters:
+              catalog: ${var.catalog}
+              model_alias: ${var.model_alias}
 
     evaluate_model:
       name: "[${bundle.target}] Evaluate Model"
       schedule:
         quartz_cron_expression: "0 0 6 * * ?"
         timezone_id: "Europe/Amsterdam"
+      environments:
+        - environment_key: serverless
+          spec:
+            client: "2"
       tasks:
         - task_key: evaluate
+          environment_key: serverless
           notebook_task:
             notebook_path: ./notebooks/05_evaluate_model.py
+            base_parameters:
+              catalog: ${var.catalog}
 
     feature_monitoring:
       name: "[${bundle.target}] Feature Monitoring"
       schedule:
         quartz_cron_expression: "0 30 6 * * ?"
         timezone_id: "Europe/Amsterdam"
+      environments:
+        - environment_key: serverless
+          spec:
+            client: "2"
       tasks:
         - task_key: monitor
+          environment_key: serverless
           notebook_task:
             notebook_path: ./notebooks/06_feature_monitoring.py
+            base_parameters:
+              catalog: ${var.catalog}
