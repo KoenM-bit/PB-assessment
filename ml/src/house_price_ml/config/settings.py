@@ -1,13 +1,27 @@
 """Environment-aware application settings."""
 
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+def _resolve_env_files() -> tuple[str, ...]:
+    """Find repo-root .env even when cwd is ml/ (e.g. make train)."""
+    paths: list[str] = []
+    for parent in Path(__file__).resolve().parents:
+        candidate = parent / ".env"
+        if candidate.is_file():
+            paths.append(str(candidate))
+    cwd_env = Path.cwd() / ".env"
+    if cwd_env.is_file() and str(cwd_env) not in paths:
+        paths.append(str(cwd_env))
+    return tuple(paths) if paths else (".env",)
+
+
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(env_file=_resolve_env_files(), extra="ignore")
 
     app_env: Literal["local", "staging", "production"] = "local"
     databricks_host: str = ""

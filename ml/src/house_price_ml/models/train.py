@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import tempfile
 from datetime import datetime, timezone
@@ -27,7 +28,13 @@ from house_price_ml.models.baseline import BusinessBaseline
 from house_price_ml.serving.mlflow_model import build_sklearn_pipeline, save_model_artifact
 
 
-def _git_commit() -> str:
+def _git_commit(explicit: str | None = None) -> str:
+    if explicit:
+        return explicit
+    for key in ("GIT_COMMIT", "GITHUB_SHA"):
+        value = os.environ.get(key, "").strip()
+        if value:
+            return value
     try:
         return (
             subprocess.check_output(["git", "rev-parse", "HEAD"], stderr=subprocess.DEVNULL)
@@ -36,6 +43,20 @@ def _git_commit() -> str:
         )
     except Exception:
         return "unknown"
+
+
+def _training_source() -> str:
+    if os.environ.get("DATABRICKS_RUNTIME_VERSION"):
+        return "databricks"
+    if os.environ.get("GITHUB_ACTIONS") == "true":
+        return "github_actions"
+    return "local"
+
+
+def _can_register_to_uc(settings: Settings) -> bool:
+    if os.environ.get("DATABRICKS_RUNTIME_VERSION"):
+        return True
+    return bool(settings.databricks_host and settings.databricks_token)
 
 
 def _walk_forward_model_maes(
@@ -85,12 +106,14 @@ def _log_json_artifact(payload: dict | list, filename: str) -> None:
 def _register_model_if_requested(
     settings: Settings,
     catalog: str | None,
-    model_alias: str | None,
+    register_alias: str | None,
     model_path: Path,
 ) -> str | None:
-    if not catalog or not model_alias:
+    if not register_alias:
         return None
-    if not settings.databricks_host or not settings.databricks_token:
+    if not catalog:
+        return None
+    if not _can_register_to_uc(settings):
         return None
 
     model_name = f"{catalog}.{settings.databricks_schema}.house_price_model"
@@ -103,10 +126,10 @@ def _register_model_if_requested(
     registered = mlflow.register_model(model_uri=model_uri, name=model_name)
     version = str(registered.version)
     client = MlflowClient(registry_uri=mlflow.get_registry_uri())
-    client.set_registered_model_alias(model_name, model_alias, version)
+    client.set_registered_model_alias(model_name, register_alias, version)
     mlflow.log_param("registered_model_name", model_name)
     mlflow.log_param("registered_model_version", version)
-    mlflow.log_param("registered_model_alias", model_alias)
+    mlflow.log_param("registered_model_alias", register_alias)
     return version
 
 
@@ -116,9 +139,14 @@ def train(
     output_dir: Path | None = None,
     *,
     catalog: str | None = None,
-    model_alias: str | None = None,
+    register_alias: str | None = None,
+    git_commit: str | None = None,
+    data_source: str | None = None,
 ) -> Path:
     settings = get_settings()
+    log_catalog = catalog or settings.databricks_catalog
+    resolved_git_commit = _git_commit(git_commit)
+    resolved_data_source = data_source or str(data_path)
     tracking_uri = configure_mlflow(settings)
 
     raw = pd.read_csv(data_path, parse_dates=["listing_timestamp", "sale_date"])
@@ -190,12 +218,12 @@ def train(
         "region_medians": region_medians,
         "model_type": model_type,
         "training_date": datetime.now(timezone.utc).isoformat(),
-        "git_commit": _git_commit(),
+        "git_commit": resolved_git_commit,
         "training_data_rows": len(train_df),
         "validation_approach": "walk_forward + holdout_test",
         "mlflow_tracking_uri": tracking_uri,
         "app_env": settings.app_env,
-        "catalog": catalog or settings.databricks_catalog,
+        "catalog": log_catalog,
     }
 
     run_name = f"train_{model_type}_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}"
@@ -204,16 +232,17 @@ def train(
             {
                 "app_env": settings.app_env,
                 "model_type": model_type,
-                "git_commit": metadata["git_commit"],
+                "git_commit": resolved_git_commit,
+                "training_source": _training_source(),
                 "beats_baseline": str(beats_baseline),
-                "data_source": str(data_path),
+                "data_source": resolved_data_source,
             }
         )
         mlflow.log_params(
             {
                 "model_type": model_type,
                 "feature_pipeline_version": settings.feature_pipeline_version,
-                "git_commit": metadata["git_commit"],
+                "git_commit": resolved_git_commit,
                 "training_rows": len(train_df),
                 "test_rows": len(test_df),
                 "rejected_rows": len(rejected),
@@ -222,8 +251,7 @@ def train(
                 "region_count": train_df["region"].nunique(),
                 "property_type_count": train_df["property_type"].nunique(),
                 "app_env": settings.app_env,
-                "catalog": catalog or settings.databricks_catalog,
-                "model_alias": model_alias or settings.model_alias,
+                "catalog": log_catalog,
                 "data_path": str(data_path),
             }
         )
@@ -289,10 +317,18 @@ def train(
         mlflow.log_artifact(str(holdout_path), artifact_path="reports")
 
         registered_version = _register_model_if_requested(
-            settings, catalog, model_alias, model_path
+            settings, catalog, register_alias, model_path
         )
         if registered_version:
-            print(f"Registered {catalog}.{settings.databricks_schema}.house_price_model v{registered_version}")
+            print(
+                f"Registered {catalog}.{settings.databricks_schema}.house_price_model "
+                f"v{registered_version} as @{register_alias}"
+            )
+        else:
+            print(
+                "Experiment logged (no model alias set). "
+                "Promote a run with: make promote-challenger RUN_ID=<run-id>"
+            )
 
     return out
 
@@ -356,15 +392,24 @@ def main() -> None:
     parser.add_argument("--data", type=Path, required=True)
     parser.add_argument("--model-type", choices=["ridge", "random_forest"], default="random_forest")
     parser.add_argument("--output", type=Path, default=Path("artifacts/model"))
-    parser.add_argument("--catalog", default=None, help="Unity Catalog for model registration")
-    parser.add_argument("--model-alias", default=None, help="Alias after registration (challenger/champion)")
+    parser.add_argument("--catalog", default=None, help="Unity Catalog name (logging only)")
+    parser.add_argument(
+        "--register-alias",
+        default=None,
+        help="Register model and set this UC alias (e.g. challenger). Omit for experiment-only.",
+    )
+    parser.add_argument("--git-commit", default=None, help="Git SHA for experiment tags")
+    parser.add_argument("--data-source", default=None, help="Human-readable data source label")
     args = parser.parse_args()
+    settings = get_settings()
     path = train(
         args.data,
         args.model_type,
         args.output,
-        catalog=args.catalog,
-        model_alias=args.model_alias,
+        catalog=args.catalog or settings.databricks_catalog,
+        register_alias=args.register_alias,
+        git_commit=args.git_commit,
+        data_source=args.data_source,
     )
     print(f"Model saved to {path}")
 

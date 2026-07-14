@@ -19,8 +19,13 @@ def configure_mlflow(settings: Settings) -> str:
         mlflow.set_tracking_uri(tracking_uri)
         mlflow.set_registry_uri(registry_uri)
     else:
-        tracking_uri = settings.mlflow_tracking_uri or "file:mlruns"
+        tracking_uri = settings.mlflow_tracking_uri or "sqlite:///mlruns/mlflow.db"
         mlflow.set_tracking_uri(tracking_uri)
 
     mlflow.set_experiment(settings.mlflow_experiment_name)
-    return str(mlflow.get_tracking_uri())
+    tracking_uri = str(mlflow.get_tracking_uri())
+    print(
+        f"MLflow tracking: {tracking_uri} → experiment {settings.mlflow_experiment_name}",
+        flush=True,
+    )
+    return tracking_uri

@@ -58,8 +58,9 @@ case "$COMMAND" in
     ;;
   run-pipeline)
     require_token
-    echo "==> Run full ML pipeline (target=${BTARGET})"
-    (cd "$ROOT/databricks" && databricks bundle run full_ml_pipeline -t "$BTARGET")
+    GIT_SHA="${GITHUB_SHA:-$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || echo unknown)}"
+    echo "==> Run full ML pipeline (target=${BTARGET}, git_commit=${GIT_SHA})"
+    (cd "$ROOT/databricks" && databricks bundle run full_ml_pipeline -t "$BTARGET" --var "git_commit=${GIT_SHA}")
     ;;
   deploy-serving)
     require_token

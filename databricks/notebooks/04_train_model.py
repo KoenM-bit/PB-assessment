@@ -1,5 +1,5 @@
 # Databricks notebook source
-# Train, log to MLflow Experiments, and register in Unity Catalog.
+# Train and log to MLflow Experiments (no alias — promote separately).
 
 # COMMAND ----------
 
@@ -8,7 +8,7 @@ from pathlib import Path
 from house_price_ml.models.train import train
 
 catalog = dbutils.widgets.get("catalog") or "house_price_staging"
-model_alias = dbutils.widgets.get("model_alias") or "challenger"
+git_commit = dbutils.widgets.get("git_commit") or None
 
 gold_df = spark.table(f"{catalog}.gold.listing_features").toPandas()
 silver_df = spark.table(f"{catalog}.silver.listings_clean").toPandas()
@@ -22,8 +22,9 @@ train(
     "random_forest",
     out,
     catalog=catalog,
-    model_alias=model_alias,
+    git_commit=git_commit,
+    data_source=f"{catalog}.gold.listing_features",
 )
 
-print(f"Training complete. See MLflow experiment /Shared/house_price_prediction")
-print(f"Model alias {model_alias} updated in {catalog}.gold.house_price_model")
+print("Training complete. See MLflow experiment /Shared/house_price_prediction")
+print("To make a run live in staging: promote-challenger with the run ID, then deploy-serving-from-registry")

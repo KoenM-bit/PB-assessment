@@ -15,6 +15,9 @@ variables:
   model_alias:
     description: Model alias for serving (champion/challenger)
     default: challenger
+  git_commit:
+    description: Git SHA for experiment tags (set by CI via --var git_commit=...)
+    default: unknown
   ml_wheel_path:
     description: Workspace path to house_price_ml wheel (built by bundle deploy)
     default: ${workspace.root_path}/artifacts/.internal/house_price_ml-0.1.0-py3-none-any.whl
@@ -105,7 +108,7 @@ resources:
             notebook_path: ./notebooks/04_train_model.py
             base_parameters:
               catalog: ${var.catalog}
-              model_alias: ${var.model_alias}
+              git_commit: ${var.git_commit}
               wheel_path: ${var.ml_wheel_path}
 
     evaluate_model:
@@ -191,7 +194,7 @@ resources:
             notebook_path: ./notebooks/04_train_model.py
             base_parameters:
               catalog: ${var.catalog}
-              model_alias: ${var.model_alias}
+              git_commit: ${var.git_commit}
               wheel_path: ${var.ml_wheel_path}
         - task_key: evaluate
           depends_on:

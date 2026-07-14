@@ -67,7 +67,7 @@ def test_model_training_summary_exists(trained_model):
 def test_robustness_small_house(trained_model):
     model = mlflow.pyfunc.load_model(str(trained_model))
     sample = {
-        "surface_area": 45,
+        "surface_area": 45.0,
         "number_of_rooms": 2,
         "number_of_bedrooms": 1,
         "build_year": 2010,
@@ -86,7 +86,7 @@ def test_robustness_small_house(trained_model):
 def test_robustness_large_house(trained_model):
     model = mlflow.pyfunc.load_model(str(trained_model))
     sample = {
-        "surface_area": 250,
+        "surface_area": 250.0,
         "number_of_rooms": 8,
         "number_of_bedrooms": 5,
         "build_year": 1970,

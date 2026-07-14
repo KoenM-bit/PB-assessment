@@ -1,4 +1,4 @@
-.PHONY: install install-ml install-web dev test test-ml test-web lint lint-ml lint-web seed train clean
+.PHONY: install install-ml install-web dev test test-ml test-web lint lint-ml lint-web seed train promote-challenger clean
 .PHONY: verify-databricks databricks-init-catalog databricks-init-prod
 .PHONY: deploy-serving deploy-serving-staging deploy-serving-prod promote-champion promote-to-production bootstrap-production
 .PHONY: deploy-netlify deploy-netlify-prod netlify-build
@@ -54,7 +54,13 @@ seed:
 	cd ml && python -m house_price_ml.data.synthetic --output ../data/sample/listings.csv --rows 500
 
 train:
+	@echo "Logs experiment to Databricks (no @challenger). Promote with: make promote-challenger RUN_ID=<id>"
 	cd ml && python -m house_price_ml.models.train --data ../data/sample/listings.csv
+
+promote-challenger:
+	@test -n "$(RUN_ID)" || (echo "Usage: make promote-challenger RUN_ID=<mlflow-run-id>"; exit 1)
+	chmod +x scripts/promote-challenger.py
+	cd ml && python ../scripts/promote-challenger.py --run-id "$(RUN_ID)"
 
 verify-databricks:
 	chmod +x scripts/verify-databricks.sh
