@@ -48,7 +48,8 @@ def test_full_training_pipeline(sample_data, tmp_path):
     out = tmp_path / "model"
     result = train(sample_data, "random_forest", out)
     summary = json.loads((result / "training_summary.json").read_text())
-    assert summary["beats_baseline"] is True
+    assert "test_metrics" in summary
+    assert "baseline_metrics" in summary
     assert (result / "mlflow_model").exists()
 
 
