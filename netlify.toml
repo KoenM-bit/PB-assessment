@@ -26,6 +26,9 @@
 [context.deploy-preview]
   environment = { APP_ENV = "staging", MODEL_ALIAS = "challenger" }
 
+# PR deploy previews: enabled via scripts/setup-netlify-previews.sh (free tier).
+# Each PR gets a unique URL: deploy-preview-N--pb-assessment.netlify.app
+
 [dev]
   command = "bash scripts/dev-web.sh"
   targetPort = 5173

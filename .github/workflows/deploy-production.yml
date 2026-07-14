@@ -1,43 +1,34 @@
 name: Deploy Production
 
+# Production Netlify deploys happen automatically when `master` is updated.
+# Use this workflow for an explicit pre-production verification gate.
 on:
   workflow_dispatch:
     inputs:
       confirm:
-        description: "Type 'deploy' to confirm production promotion"
+        description: "Type 'deploy' to confirm production verification"
         required: true
 
 jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
       - name: Check confirmation
         if: inputs.confirm != 'deploy'
         run: |
           echo "Confirmation failed. Type 'deploy' to proceed."
           exit 1
 
-  deploy:
+  ci:
     needs: validate
+    uses: ./.github/workflows/ci.yml
+
+  smoke:
+    needs: ci
     runs-on: ubuntu-latest
-    environment: production
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Run full test suite
+      - name: Verify production site responds
         run: |
-          pip install -e "ml/[dev]"
-          cd ml && pytest -v
-          cd ../apps/web && npm install && npm test -- --run
-
-      - name: Deploy Netlify production
-        run: echo "Configure NETLIFY_AUTH_TOKEN and NETLIFY_PRODUCTION_SITE_ID"
-        # netlify deploy --prod --context production
-
-      - name: Promote model to champion
-        run: echo "Set MLflow champion alias to approved version"
-        # databricks bundle deploy -t prod
-
-      - name: Verify rollback target
-        run: echo "Confirm previous_champion alias is set"
+          curl -fsS "https://pb-assessment.netlify.app/api/monitoring" | head -c 200
+          echo ""
+          echo "Production API reachable."

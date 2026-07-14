@@ -98,6 +98,14 @@ deploy-netlify-prod:
 	chmod +x scripts/netlify-deploy.sh
 	./scripts/netlify-deploy.sh --prod --context staging
 
+setup-github-protection:
+	chmod +x scripts/setup-github-branch-protection.sh
+	./scripts/setup-github-branch-protection.sh
+
+setup-netlify-previews:
+	chmod +x scripts/setup-netlify-previews.sh
+	./scripts/setup-netlify-previews.sh
+
 clean:
 	rm -rf apps/web/dist ml/.pytest_cache ml/.mypy_cache ml/.ruff_cache ml/artifacts
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true

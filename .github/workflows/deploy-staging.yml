@@ -1,33 +1,18 @@
-name: Deploy Staging
+name: Staging Smoke Test
 
+# Optional post-deploy smoke test for the staging branch URL.
 on:
+  workflow_dispatch:
   push:
     branches: [staging]
 
 jobs:
-  deploy:
+  smoke:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-
-      - name: Install and test
+      - name: Wait for Netlify staging deploy
+        run: sleep 90
+      - name: Check staging API
         run: |
-          cd apps/web && npm install && npm run build
-          cd ../../netlify/functions && npm install && npm test -- --run
-          pip install -e "ml/[dev]"
-          cd ml && pytest -v --ignore=tests/model/test_smoke.py
-
-      - name: Deploy Netlify staging
-        run: echo "Configure NETLIFY_AUTH_TOKEN and NETLIFY_STAGING_SITE_ID secrets"
-        # netlify deploy --prod --context staging
-
-      - name: Deploy Databricks staging
-        run: echo "Configure DATABRICKS_TOKEN secret"
-        # cd databricks && databricks bundle deploy -t staging
-
-      - name: Smoke test
-        run: echo "Run staging smoke test against deployed URL"
+          curl -fsS "https://staging--pb-assessment.netlify.app/api/monitoring" | head -c 300
+          echo ""
