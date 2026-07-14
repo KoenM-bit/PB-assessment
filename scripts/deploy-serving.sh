@@ -29,8 +29,12 @@ echo "    alias=${MODEL_ALIAS}"
 echo ""
 
 if [[ ! -d "$ROOT/ml/artifacts/model/mlflow_model" ]]; then
-  echo "Training model first..."
-  make -C "$ROOT" train
+  if [[ "${FROM_REGISTRY:-}" == "true" ]]; then
+    echo "No local artifact — deploying from Unity Catalog alias (${MODEL_ALIAS})."
+  else
+    echo "Training model first..."
+    make -C "$ROOT" train
+  fi
 fi
 
 cd "$ROOT/ml"
@@ -39,4 +43,9 @@ if ! python -c "import mlflow" 2>/dev/null; then
   pip install -e ".[dev]"
 fi
 
-exec python "$ROOT/scripts/deploy-serving.py"
+ARGS=()
+if [[ "${FROM_REGISTRY:-}" == "true" ]]; then
+  ARGS+=(--from-registry)
+fi
+
+exec python "$ROOT/scripts/deploy-serving.py" "${ARGS[@]}"

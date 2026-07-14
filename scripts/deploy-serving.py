@@ -2,10 +2,12 @@
 """Register local MLflow model to Unity Catalog and create Model Serving endpoint."""
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 
@@ -168,7 +170,139 @@ def check_token_scopes(host: str, token: str) -> list[str]:
     return missing
 
 
+def deploy_endpoint(
+    host: str,
+    token: str,
+    model_name: str,
+    serve_version: str,
+    endpoint: str,
+) -> int:
+    print(f"==> 3/4 Create or update serving endpoint: {endpoint}")
+    served_entity = {
+        "entity_name": model_name,
+        "entity_version": serve_version,
+        "workload_size": "Small",
+        "scale_to_zero_enabled": True,
+    }
+    create_body = {
+        "name": endpoint,
+        "config": {"served_entities": [served_entity]},
+    }
+    update_body = {"served_entities": [served_entity]}
+
+    if endpoint_exists(host, token, endpoint):
+        print(f"    Endpoint exists — updating to version {serve_version}")
+        curl_json(
+            "PUT",
+            f"{host}/api/2.0/serving-endpoints/{endpoint}/config",
+            token,
+            update_body,
+        )
+        print("    Endpoint config updated")
+    else:
+        try:
+            resp = curl_json("POST", f"{host}/api/2.0/serving-endpoints", token, create_body)
+            print(f"    Endpoint creation started: {resp.get('name', endpoint)}")
+        except RuntimeError as exc:
+            err = str(exc)
+            if "RESOURCE_ALREADY_EXISTS" in err or "already exists" in err.lower():
+                curl_json(
+                    "PUT",
+                    f"{host}/api/2.0/serving-endpoints/{endpoint}/config",
+                    token,
+                    update_body,
+                )
+                print("    Endpoint config updated")
+            elif "RESOURCE_EXHAUSTED" in err:
+                print_endpoint_limit_help(host, token)
+                return 1
+            else:
+                print(f"    Endpoint create failed: {err}", file=sys.stderr)
+                return 1
+
+    print("==> 4/4 Wait for endpoint to be READY (may take 5–15 min)...")
+    for attempt in range(60):
+        try:
+            status_resp = curl_json("GET", f"{host}/api/2.0/serving-endpoints/{endpoint}", token)
+        except RuntimeError as exc:
+            print(f"    Status check failed: {exc}", file=sys.stderr)
+            time.sleep(15)
+            continue
+
+        state = status_resp.get("state") or {}
+        ready = state.get("ready", "UNKNOWN")
+        updating = state.get("config_update", "UNKNOWN")
+        pending = status_resp.get("pending_config", {})
+        entities = pending.get("served_entities") or status_resp.get("config", {}).get("served_entities", [])
+        deployment = "n/a"
+        if entities:
+            entity_state = entities[0].get("state", {})
+            deployment = entity_state.get("deployment", "n/a")
+            message = entity_state.get("deployment_state_message", "")
+            if message:
+                deployment = f"{deployment}: {message[:120]}"
+
+        print(f"    ready={ready}, config_update={updating}, deployment={deployment}")
+        if updating == "UPDATE_FAILED":
+            entity_name = entities[0].get("name") if entities else None
+            config_version = pending.get("config_version") or status_resp.get("config", {}).get("config_version", 0)
+            if entity_name:
+                print("", file=sys.stderr)
+                print("    Deployment failed. Fetching serving logs...", file=sys.stderr)
+                _print_serving_failure_logs(host, token, endpoint, entity_name, config_version)
+                print("", file=sys.stderr)
+                print("    Fix the issue, then: make train && make deploy-serving", file=sys.stderr)
+                print("    Or inspect logs anytime: make fetch-serving-logs", file=sys.stderr)
+                return 1
+        if ready == "READY" and updating in ("NOT_UPDATING", None, ""):
+            break
+        time.sleep(15)
+    else:
+        print("    WARN: Endpoint not READY yet — check Serving UI in Databricks", file=sys.stderr)
+
+    print("")
+    print("Done. Run: make verify-databricks")
+    return 0
+
+
+def deploy_from_registry(
+    host: str,
+    token: str,
+    catalog: str,
+    schema: str,
+    endpoint: str,
+    alias: str,
+) -> int:
+    """Update serving endpoint to the model version behind a registry alias."""
+    import mlflow
+    from mlflow import MlflowClient
+
+    model_name = f"{catalog}.{schema}.house_price_model"
+    print(f"==> 1/2 Resolve registry alias: {model_name}@{alias}")
+    mlflow.set_tracking_uri("databricks")
+    mlflow.set_registry_uri("databricks-uc")
+    client = MlflowClient(registry_uri="databricks-uc")
+    try:
+        resolved = client.get_model_version_by_alias(model_name, alias)
+        serve_version = str(resolved.version)
+    except Exception as exc:
+        print(f"    Could not resolve alias '{alias}': {exc}", file=sys.stderr)
+        print("    Run the train job or pipeline first.", file=sys.stderr)
+        return 1
+    print(f"    {alias} -> version {serve_version}")
+
+    return deploy_endpoint(host, token, model_name, serve_version, endpoint)
+
+
 def main() -> int:
+    parser = argparse.ArgumentParser(description="Register model and deploy Databricks serving endpoint.")
+    parser.add_argument(
+        "--from-registry",
+        action="store_true",
+        help="Skip local artifact upload; deploy the version behind MODEL_ALIAS in Unity Catalog.",
+    )
+    args = parser.parse_args()
+
     root = Path(__file__).resolve().parents[1]
     load_env(root / ".env")
 
@@ -189,6 +323,9 @@ def main() -> int:
         print_token_scope_help(missing_scopes)
         return 1
     print("    Token scopes OK (all-apis, sql, mlflow, serving)")
+
+    if args.from_registry:
+        return deploy_from_registry(host, token, catalog, schema, endpoint, alias)
 
     model_uri_path = root / "ml" / "artifacts" / "model" / "mlflow_model"
     if not model_uri_path.exists():
@@ -246,94 +383,7 @@ def main() -> int:
         return 1
     print(f"    Alias '{alias}' -> version {serve_version}")
 
-    print(f"==> 3/4 Create or update serving endpoint: {endpoint}")
-    served_entity = {
-        "entity_name": model_name,
-        "entity_version": serve_version,
-        "workload_size": "Small",
-        "scale_to_zero_enabled": True,
-    }
-    create_body = {
-        "name": endpoint,
-        "config": {"served_entities": [served_entity]},
-    }
-    update_body = {"served_entities": [served_entity]}
-
-    if endpoint_exists(host, token, endpoint):
-        print(f"    Endpoint exists — updating to version {serve_version}")
-        curl_json(
-            "PUT",
-            f"{host}/api/2.0/serving-endpoints/{endpoint}/config",
-            token,
-            update_body,
-        )
-        print("    Endpoint config updated")
-    else:
-        try:
-            resp = curl_json("POST", f"{host}/api/2.0/serving-endpoints", token, create_body)
-            print(f"    Endpoint creation started: {resp.get('name', endpoint)}")
-        except RuntimeError as exc:
-            err = str(exc)
-            if "RESOURCE_ALREADY_EXISTS" in err or "already exists" in err.lower():
-                curl_json(
-                    "PUT",
-                    f"{host}/api/2.0/serving-endpoints/{endpoint}/config",
-                    token,
-                    update_body,
-                )
-                print("    Endpoint config updated")
-            elif "RESOURCE_EXHAUSTED" in err:
-                print_endpoint_limit_help(host, token)
-                return 1
-            else:
-                print(f"    Endpoint create failed: {err}", file=sys.stderr)
-                return 1
-
-    print("==> 4/4 Wait for endpoint to be READY (may take 5–15 min)...")
-    import time
-
-    for attempt in range(60):
-        try:
-            status_resp = curl_json("GET", f"{host}/api/2.0/serving-endpoints/{endpoint}", token)
-        except RuntimeError as exc:
-            print(f"    Status check failed: {exc}", file=sys.stderr)
-            time.sleep(15)
-            continue
-
-        state = status_resp.get("state") or {}
-        ready = state.get("ready", "UNKNOWN")
-        updating = state.get("config_update", "UNKNOWN")
-        pending = status_resp.get("pending_config", {})
-        entities = pending.get("served_entities") or status_resp.get("config", {}).get("served_entities", [])
-        deployment = "n/a"
-        if entities:
-            entity_state = entities[0].get("state", {})
-            deployment = entity_state.get("deployment", "n/a")
-            message = entity_state.get("deployment_state_message", "")
-            if message:
-                deployment = f"{deployment}: {message[:120]}"
-
-        print(f"    ready={ready}, config_update={updating}, deployment={deployment}")
-        if updating == "UPDATE_FAILED":
-            entity_name = entities[0].get("name") if entities else None
-            config_version = pending.get("config_version") or status_resp.get("config", {}).get("config_version", 0)
-            if entity_name:
-                print("", file=sys.stderr)
-                print("    Deployment failed. Fetching serving logs...", file=sys.stderr)
-                _print_serving_failure_logs(host, token, endpoint, entity_name, config_version)
-                print("", file=sys.stderr)
-                print("    Fix the issue, then: make train && make deploy-serving", file=sys.stderr)
-                print("    Or inspect logs anytime: make fetch-serving-logs", file=sys.stderr)
-                return 1
-        if ready == "READY" and updating in ("NOT_UPDATING", None, ""):
-            break
-        time.sleep(15)
-    else:
-        print("    WARN: Endpoint not READY yet — check Serving UI in Databricks", file=sys.stderr)
-
-    print("")
-    print("Done. Run: make verify-databricks")
-    return 0
+    return deploy_endpoint(host, token, model_name, serve_version, endpoint)
 
 
 if __name__ == "__main__":

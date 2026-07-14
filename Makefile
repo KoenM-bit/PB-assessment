@@ -2,6 +2,8 @@
 .PHONY: verify-databricks databricks-init-catalog databricks-init-prod
 .PHONY: deploy-serving deploy-serving-staging deploy-serving-prod promote-champion promote-to-production bootstrap-production
 .PHONY: deploy-netlify deploy-netlify-prod netlify-build
+.PHONY: databricks-bundle-deploy databricks-bundle-deploy-prod upload-ml-wheel setup-databricks-repo
+.PHONY: remote-databricks
 
 install: install-ml install-web
 
@@ -75,6 +77,14 @@ deploy-serving-prod:
 	chmod +x scripts/deploy-serving.sh
 	./scripts/deploy-serving.sh production
 
+deploy-serving-from-registry:
+	chmod +x scripts/deploy-serving.sh
+	FROM_REGISTRY=true ./scripts/deploy-serving.sh staging
+
+deploy-serving-prod-from-registry:
+	chmod +x scripts/deploy-serving.sh
+	FROM_REGISTRY=true ./scripts/deploy-serving.sh production
+
 promote-champion:
 	chmod +x scripts/promote-champion.py
 	cd ml && python ../scripts/promote-champion.py
@@ -103,6 +113,29 @@ databricks-bundle-deploy:
 databricks-bundle-deploy-prod:
 	chmod +x scripts/databricks-bundle-deploy.sh
 	./scripts/databricks-bundle-deploy.sh prod
+
+upload-ml-wheel:
+	chmod +x scripts/upload-ml-wheel.sh
+	./scripts/upload-ml-wheel.sh
+
+databricks-staging-pipeline:
+	chmod +x scripts/databricks-ci.sh
+	./scripts/databricks-ci.sh staging-pipeline staging
+
+databricks-production-pipeline:
+	chmod +x scripts/databricks-ci.sh
+	CONFIRM_PROMOTE=yes ./scripts/databricks-ci.sh production-pipeline prod
+
+setup-databricks-repo:
+	chmod +x scripts/setup-databricks-repo.sh
+	./scripts/setup-databricks-repo.sh
+
+# Trigger GitHub Actions Databricks workflow (requires: gh auth login)
+TARGET ?= staging
+remote-databricks:
+	@test -n "$(CMD)" || (echo "Usage: make remote-databricks CMD=staging-pipeline [TARGET=staging]"; exit 1)
+	gh workflow run databricks.yml -f command=$(CMD) -f target=$(TARGET) \
+		$(if $(filter promote-to-production production-pipeline,$(CMD)),-f confirm_promote=yes,)
 
 netlify-build:
 	chmod +x scripts/netlify-build.sh

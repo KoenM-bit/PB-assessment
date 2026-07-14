@@ -1,0 +1,104 @@
+name: Databricks
+
+# Enterprise CI/CD: run the same operations as `make` from GitHub Actions (no laptop required).
+# Secrets: DATABRICKS_HOST, DATABRICKS_TOKEN, DATABRICKS_SQL_WAREHOUSE_ID
+
+on:
+  workflow_dispatch:
+    inputs:
+      command:
+        description: "Operation (maps to make / scripts/databricks-ci.sh)"
+        required: true
+        type: choice
+        options:
+          - staging-pipeline
+          - production-pipeline
+          - bundle-deploy
+          - upload-wheel
+          - run-pipeline
+          - deploy-serving
+          - deploy-serving-local
+          - promote-champion
+          - promote-to-production
+          - verify
+          - init-catalog
+          - bootstrap-production
+      target:
+        description: "Databricks bundle target"
+        required: true
+        type: choice
+        default: staging
+        options:
+          - staging
+          - prod
+      confirm_promote:
+        description: "Type 'yes' for promote-to-production"
+        required: false
+        default: "no"
+
+  push:
+    branches: [staging]
+    paths:
+      - "databricks/**"
+      - "ml/**"
+      - "scripts/databricks-ci.sh"
+      - "scripts/upload-ml-wheel.sh"
+      - "scripts/deploy-serving.py"
+      - "scripts/promote-to-production.py"
+      - ".github/workflows/databricks.yml"
+
+concurrency:
+  group: databricks-${{ github.ref }}-${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  databricks:
+    name: ${{ github.event_name == 'workflow_dispatch' && inputs.command || 'staging-pipeline' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+      DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+      DATABRICKS_SQL_WAREHOUSE_ID: ${{ secrets.DATABRICKS_SQL_WAREHOUSE_ID }}
+      CONFIRM_PROMOTE: ${{ github.event_name == 'workflow_dispatch' && inputs.command == 'promote-to-production' && inputs.confirm_promote == 'yes' && 'yes' || '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: ml/pyproject.toml
+
+      - uses: databricks/setup-cli@main
+
+      - name: Install ML package (for local-train deploy path)
+        run: pip install -e "ml/[dev]"
+
+      - name: Resolve command
+        id: cmd
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "command=${{ inputs.command }}" >> "$GITHUB_OUTPUT"
+            echo "target=${{ inputs.target }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "command=staging-pipeline" >> "$GITHUB_OUTPUT"
+            echo "target=staging" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Gate production promotion
+        if: steps.cmd.outputs.command == 'promote-to-production' || steps.cmd.outputs.command == 'production-pipeline'
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.confirm_promote }}" != "yes" ]; then
+            echo "Production promotion requires confirm_promote=yes in workflow_dispatch." >&2
+            exit 1
+          fi
+          if [ "${{ github.event_name }}" = "push" ]; then
+            echo "Production pipeline cannot run on push — use workflow_dispatch." >&2
+            exit 1
+          fi
+
+      - name: Run Databricks command
+        run: |
+          chmod +x scripts/databricks-ci.sh scripts/*.sh
+          ./scripts/databricks-ci.sh "${{ steps.cmd.outputs.command }}" "${{ steps.cmd.outputs.target }}"

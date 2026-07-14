@@ -55,9 +55,12 @@ Deploys:
 
 | Workflow | Trigger | Actions |
 |----------|---------|---------|
-| `pr.yml` | Pull request | Lint, typecheck, test |
-| `deploy-staging.yml` | Push to staging | Build, deploy Netlify + Databricks staging, smoke test |
-| `deploy-production.yml` | Manual dispatch | Deploy production with approval |
+| `ci.yml` | Pull request | Lint, typecheck, test |
+| `databricks.yml` | Push to staging (ml/databricks) + manual | Bundle deploy, ML pipeline, serving |
+| `deploy-staging.yml` | Push to staging | E2E smoke test after Netlify deploy |
+| `deploy-production.yml` | Manual dispatch | Production verification gate |
+
+See [enterprise-workflow.md](enterprise-workflow.md) for the full online development model.
 
 ## Production Promotion Checklist
 
