@@ -3,16 +3,6 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-REPO_URL="${DATABRICKS_REPO_URL:-}"
-REPO_PATH="${DATABRICKS_REPO_PATH:-}"
-
-if [ -z "$REPO_PATH" ] && [ -n "${DATABRICKS_HOST:-}" ] && command -v databricks >/dev/null 2>&1; then
-  USER_EMAIL="$(databricks current-user me -o json 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin).get('userName',''))" 2>/dev/null || true)"
-  if [ -n "$USER_EMAIL" ]; then
-    REPO_PATH="/Repos/${USER_EMAIL}/PB-assessment"
-  fi
-fi
-REPO_PATH="${REPO_PATH:-/Repos/PB-assessment}"
 
 if [ -f "$ROOT/.env" ]; then
   set -a
@@ -26,9 +16,13 @@ if [ -z "${DATABRICKS_HOST:-}" ]; then
   exit 1
 fi
 
+export DATABRICKS_HOST="${DATABRICKS_HOST%/}"
+
+REPO_URL="${DATABRICKS_REPO_URL:-}"
+REPO_PATH="${DATABRICKS_REPO_PATH:-}"
+
 if [ -z "$REPO_URL" ]; then
   REMOTE="$(git -C "$ROOT" remote get-url origin 2>/dev/null || true)"
-  # Databricks Repos requires HTTPS GitHub URL (not SSH).
   case "$REMOTE" in
     git@github.com:*)
       REPO_URL="https://github.com/${REMOTE#git@github.com:}"
@@ -42,13 +36,12 @@ if [ -z "$REPO_URL" ]; then
       REPO_URL="$REMOTE"
       ;;
   esac
-  if [ -n "$REPO_URL" ]; then
-    echo "Using git remote: $REPO_URL"
-  else
+  if [ -z "$REPO_URL" ]; then
     echo "Set DATABRICKS_REPO_URL to your GitHub HTTPS URL, e.g.:" >&2
     echo "  https://github.com/KoenM-bit/PB-assessment.git" >&2
     exit 1
   fi
+  echo "Using git remote: $REPO_URL"
 fi
 
 if ! command -v databricks >/dev/null 2>&1; then
@@ -56,19 +49,38 @@ if ! command -v databricks >/dev/null 2>&1; then
   exit 1
 fi
 
+if [ -z "$REPO_PATH" ]; then
+  USER_EMAIL="$(databricks current-user me -o json | python3 -c "import sys,json; print(json.load(sys.stdin)['userName'])")"
+  REPO_PATH="/Repos/${USER_EMAIL}/PB-assessment"
+fi
+
 echo "==> Create Databricks Git folder at ${REPO_PATH}"
-echo "    (If this fails, create the repo manually in Databricks UI → Repos → Add Repo)"
+echo "    (Requires GitHub access — link GitHub in Databricks UI if prompted)"
 echo ""
 
+BRANCH="$(git -C "$ROOT" branch --show-current)"
+
 set +e
-databricks repos create "$REPO_URL" --path "$REPO_PATH" 2>&1
+CREATE_OUT="$(databricks repos create "$REPO_URL" gitHub --path "$REPO_PATH" 2>&1)"
 CREATE_RC=$?
 set -e
 
-if [ "$CREATE_RC" -ne 0 ]; then
-  echo ""
-  echo "Repo may already exist. Update from default branch:"
-  databricks repos update "$REPO_PATH" --branch "$(git -C "$ROOT" branch --show-current)"
+if [ "$CREATE_RC" -eq 0 ]; then
+  echo "$CREATE_OUT"
+else
+  echo "$CREATE_OUT"
+  if echo "$CREATE_OUT" | grep -qiE "already exists|RESOURCE_ALREADY_EXISTS"; then
+    echo ""
+    echo "Repo already exists — updating to branch ${BRANCH}"
+    databricks repos update "$REPO_PATH" --branch "$BRANCH"
+  else
+    echo "" >&2
+    echo "ERROR: Could not create repo at ${REPO_PATH}" >&2
+    echo "Try manually: Databricks UI → Repos → Add Repo" >&2
+    echo "  URL:  ${REPO_URL}" >&2
+    echo "  Path: ${REPO_PATH}" >&2
+    exit 1
+  fi
 fi
 
 echo ""
@@ -77,9 +89,7 @@ echo ""
 echo "Workflow:"
 echo "  • Edit notebooks/code in Databricks Repos OR locally"
 echo "  • Commit + push to GitHub from either side"
-echo "  • Databricks jobs run code from the synced repo after bundle deploy"
-echo "  • GitHub Actions runs the same commands as make (see docs/enterprise-workflow.md)"
+echo "  • GitHub Actions bundle-deploy syncs jobs after push"
 echo ""
 echo "In Databricks UI:"
 echo "  Repos → ${REPO_PATH} → open databricks/notebooks/"
-echo "  Workflows → Jobs → run [staging] Full ML Pipeline"

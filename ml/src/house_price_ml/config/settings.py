@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     serving_timeout_ms: int = 10000
     use_mock_databricks: bool = True
     feature_pipeline_version: str = "1.0.0"
+    mlflow_tracking_uri: str = ""
+    mlflow_registry_uri: str = ""
+    mlflow_experiment_name: str = "/Shared/house_price_prediction"
 
     @property
     def bronze_schema(self) -> str:
