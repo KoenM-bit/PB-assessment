@@ -1,7 +1,7 @@
 # Databricks notebook source
 # Feature monitoring
 
-# MAGIC %pip install /Workspace/Shared/house_price_ml-0.1.0-py3-none-any.whl
+# MAGIC %run ./_install_wheel
 
 # COMMAND ----------
 

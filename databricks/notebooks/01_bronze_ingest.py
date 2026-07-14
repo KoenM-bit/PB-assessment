@@ -2,7 +2,7 @@
 # Bronze ingest
 # Thin wrapper — logic lives in house_price_ml package
 
-# MAGIC %pip install /Workspace/Shared/house_price_ml-0.1.0-py3-none-any.whl
+# MAGIC %run ./_install_wheel
 
 # COMMAND ----------
 

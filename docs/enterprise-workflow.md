@@ -168,7 +168,7 @@ Replace `DATABRICKS_TOKEN` in GitHub with **OIDC + service principal** for produ
 
 | Issue | Fix |
 |-------|-----|
-| Pipeline fails on `%pip install` wheel | Run `make upload-ml-wheel` or re-run `staging-pipeline` |
+| Pipeline fails on `%pip install` wheel | Re-run `staging-pipeline` (wheel uploads to `/Workspace/Users/<you>/libs/`) |
 | `deploy-serving` can't find alias | Run train job / full pipeline first |
 | GitHub Action missing secrets | Add `DATABRICKS_HOST` + `DATABRICKS_TOKEN` in repo secrets |
 | Repos out of sync | Databricks Repos → pull, or `git pull` locally |

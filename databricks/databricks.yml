@@ -8,6 +8,9 @@ variables:
   model_alias:
     description: Model alias for serving (champion/challenger)
     default: challenger
+  ml_wheel_path:
+    description: Workspace path to house_price_ml wheel (upload with make upload-ml-wheel)
+    default: /Workspace/Users/${workspace.current_user.userName}/libs/house_price_ml-0.1.0-py3-none-any.whl
 
 # Workspace host: set DATABRICKS_HOST in the environment (or use `databricks auth login`).
 # Databricks bundles do not allow ${var.*} interpolation on workspace.host.
@@ -41,6 +44,7 @@ resources:
             notebook_path: ./notebooks/01_bronze_ingest.py
             base_parameters:
               catalog: ${var.catalog}
+              wheel_path: ${var.ml_wheel_path}
 
     silver_clean:
       name: "[${bundle.target}] Silver Clean"
@@ -55,6 +59,7 @@ resources:
             notebook_path: ./notebooks/02_silver_clean.py
             base_parameters:
               catalog: ${var.catalog}
+              wheel_path: ${var.ml_wheel_path}
 
     gold_features:
       name: "[${bundle.target}] Gold Features"
@@ -69,6 +74,7 @@ resources:
             notebook_path: ./notebooks/03_gold_features.py
             base_parameters:
               catalog: ${var.catalog}
+              wheel_path: ${var.ml_wheel_path}
 
     train_model:
       name: "[${bundle.target}] Train Model"
@@ -84,6 +90,7 @@ resources:
             base_parameters:
               catalog: ${var.catalog}
               model_alias: ${var.model_alias}
+              wheel_path: ${var.ml_wheel_path}
 
     evaluate_model:
       name: "[${bundle.target}] Evaluate Model"
@@ -101,6 +108,7 @@ resources:
             notebook_path: ./notebooks/05_evaluate_model.py
             base_parameters:
               catalog: ${var.catalog}
+              wheel_path: ${var.ml_wheel_path}
 
     feature_monitoring:
       name: "[${bundle.target}] Feature Monitoring"
@@ -118,6 +126,7 @@ resources:
             notebook_path: ./notebooks/06_feature_monitoring.py
             base_parameters:
               catalog: ${var.catalog}
+              wheel_path: ${var.ml_wheel_path}
 
     full_ml_pipeline:
       name: "[${bundle.target}] Full ML Pipeline"
@@ -132,6 +141,7 @@ resources:
             notebook_path: ./notebooks/01_bronze_ingest.py
             base_parameters:
               catalog: ${var.catalog}
+              wheel_path: ${var.ml_wheel_path}
         - task_key: silver
           depends_on:
             - task_key: bronze
@@ -140,6 +150,7 @@ resources:
             notebook_path: ./notebooks/02_silver_clean.py
             base_parameters:
               catalog: ${var.catalog}
+              wheel_path: ${var.ml_wheel_path}
         - task_key: gold
           depends_on:
             - task_key: silver
@@ -148,6 +159,7 @@ resources:
             notebook_path: ./notebooks/03_gold_features.py
             base_parameters:
               catalog: ${var.catalog}
+              wheel_path: ${var.ml_wheel_path}
         - task_key: train
           depends_on:
             - task_key: gold
@@ -157,6 +169,7 @@ resources:
             base_parameters:
               catalog: ${var.catalog}
               model_alias: ${var.model_alias}
+              wheel_path: ${var.ml_wheel_path}
         - task_key: evaluate
           depends_on:
             - task_key: train
@@ -165,3 +178,4 @@ resources:
             notebook_path: ./notebooks/05_evaluate_model.py
             base_parameters:
               catalog: ${var.catalog}
+              wheel_path: ${var.ml_wheel_path}
