@@ -1,0 +1,148 @@
+{
+  "model_type": "random_forest",
+  "feature_pipeline_version": "1.0.0",
+  "training_date": "2026-07-14T09:39:12.590265",
+  "git_commit": "unknown",
+  "training_data_rows": 455,
+  "test_rows": 45,
+  "validation_approach": "walk_forward + holdout_test",
+  "regions": [
+    "Amsterdam",
+    "Eindhoven",
+    "Groningen",
+    "Maastricht",
+    "Nijmegen",
+    "Rotterdam",
+    "The Hague",
+    "Utrecht"
+  ],
+  "property_types": [
+    "apartment",
+    "bungalow",
+    "detached",
+    "semi_detached",
+    "terraced_house"
+  ],
+  "surface_area_range": {
+    "min": 45.0,
+    "max": 219.0,
+    "median": 134.0
+  },
+  "price_range": {
+    "min": 119856.250554497,
+    "max": 1292340.344263251,
+    "median": 516747.0218079373
+  },
+  "feature_bounds": {
+    "surface_area": {
+      "p01": 46.54,
+      "p99": 217.0
+    },
+    "number_of_rooms": {
+      "p01": 2.0,
+      "p99": 9.0
+    },
+    "number_of_bedrooms": {
+      "p01": 1.0,
+      "p99": 7.0
+    },
+    "house_age": {
+      "p01": 2.0,
+      "p99": 73.0
+    },
+    "surface_per_room": {
+      "p01": 18.666666666666668,
+      "p99": 47.0
+    },
+    "energy_label_score": {
+      "p01": 2.0,
+      "p99": 9.0
+    },
+    "surface_x_energy": {
+      "p01": 153.4,
+      "p99": 1778.219999999999
+    },
+    "dist_to_city_centre_km": {
+      "p01": 0.0,
+      "p99": 286.228218261051
+    },
+    "region_median_price_per_sqm": {
+      "p01": 2852.7368762680617,
+      "p99": 6123.102945375855
+    },
+    "month": {
+      "p01": 1.0,
+      "p99": 12.0
+    },
+    "quarter": {
+      "p01": 1.0,
+      "p99": 4.0
+    },
+    "garden_numeric": {
+      "p01": 0.0,
+      "p99": 1.0
+    }
+  },
+  "baseline_lookup": {
+    "Amsterdam|apartment": 4956.595901967031,
+    "Amsterdam|bungalow": 4985.942893488142,
+    "Amsterdam|detached": 6123.102945375855,
+    "Amsterdam|semi_detached": 5049.100231248533,
+    "Amsterdam|terraced_house": 4301.609108951735,
+    "Eindhoven|apartment": 3766.4393616887537,
+    "Eindhoven|bungalow": 3182.6341257577014,
+    "Eindhoven|detached": 4340.784881404059,
+    "Eindhoven|semi_detached": 3806.8217575074946,
+    "Eindhoven|terraced_house": 3290.2857417544883,
+    "Groningen|apartment": 3395.0418522040377,
+    "Groningen|bungalow": 2974.2441427400945,
+    "Groningen|detached": 3784.711499773556,
+    "Groningen|semi_detached": 3281.700867324721,
+    "Groningen|terraced_house": 2915.3230907460793,
+    "Maastricht|apartment": 3630.309605110691,
+    "Maastricht|bungalow": 3314.5291954206605,
+    "Maastricht|detached": 3714.6789345754287,
+    "Maastricht|semi_detached": 3270.7742751034193,
+    "Maastricht|terraced_house": 3385.051126157543,
+    "Nijmegen|apartment": 3180.3988548007887,
+    "Nijmegen|bungalow": 3021.499032716615,
+    "Nijmegen|detached": 3723.8058187347883,
+    "Nijmegen|semi_detached": 3678.590337557947,
+    "Nijmegen|terraced_house": 2852.7368762680617,
+    "Rotterdam|apartment": 3850.0521289002572,
+    "Rotterdam|bungalow": 3793.9488071344786,
+    "Rotterdam|detached": 4488.132064811071,
+    "Rotterdam|semi_detached": 4244.477365650535,
+    "Rotterdam|terraced_house": 3434.9604692432044,
+    "The Hague|apartment": 4226.53562425903,
+    "The Hague|bungalow": 4038.470934990809,
+    "The Hague|detached": 5368.091731669097,
+    "The Hague|semi_detached": 4437.685226974197,
+    "The Hague|terraced_house": 3715.090842946748,
+    "Utrecht|apartment": 4620.110298962708,
+    "Utrecht|bungalow": 4625.368935798519,
+    "Utrecht|detached": 5531.698092318527,
+    "Utrecht|semi_detached": 4670.566728815918,
+    "Utrecht|terraced_house": 4359.602457420196
+  },
+  "global_median_psm": 3826.5180636335504,
+  "holdout_evaluation": {
+    "model": {
+      "mae": 36242.55134845045,
+      "rmse": 44211.25871542761,
+      "bias": 1876.4599557097445,
+      "mape": 8.488263704714933,
+      "sample_size": 45
+    },
+    "baseline": {
+      "mae": 40396.186639587184,
+      "rmse": 50685.33214303418,
+      "bias": 797.0652785027348,
+      "mape": 9.098932330489989,
+      "sample_size": 45
+    },
+    "beats_baseline": true,
+    "mae_improvement_pct": 10.3
+  },
+  "walk_forward_baseline_mae_mean": 43338.17275862855
+}

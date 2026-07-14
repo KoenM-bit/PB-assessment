@@ -1,0 +1,299 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, sans-serif;
+  background: #f5f7fa;
+  color: #1a1a2e;
+}
+
+a {
+  color: #2563eb;
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+.app {
+  min-height: 100vh;
+}
+
+.nav {
+  background: #1a1a2e;
+  color: white;
+  padding: 1rem 2rem;
+  display: flex;
+  gap: 1.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.nav a {
+  color: #e2e8f0;
+  font-weight: 500;
+}
+
+.nav a.active {
+  color: #60a5fa;
+}
+
+.nav h1 {
+  margin: 0;
+  font-size: 1.25rem;
+  margin-right: auto;
+}
+
+.main {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 2rem 1rem;
+}
+
+.muted {
+  color: #64748b;
+  font-size: 0.875rem;
+}
+
+.listings-card .listings-toolbar {
+  display: flex;
+  gap: 1rem;
+  margin: 1rem 0;
+  max-width: 320px;
+}
+
+.table-wrap {
+  overflow-x: auto;
+}
+
+.table-input {
+  width: 100%;
+  min-width: 110px;
+  padding: 0.375rem 0.5rem;
+  font-size: 0.875rem;
+}
+
+button.btn-sm {
+  margin-top: 0;
+  padding: 0.375rem 0.75rem;
+  font-size: 0.875rem;
+}
+
+.row-error {
+  color: #dc2626;
+  font-size: 0.75rem;
+  margin-top: 0.25rem;
+  max-width: 140px;
+}
+
+.address-cell {
+  font-weight: 500;
+}
+
+.badge-success {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.comparison-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 1rem;
+  margin: 1rem 0;
+}
+
+.comparison-panel {
+  background: #f8fafc;
+  border-radius: 8px;
+  padding: 1rem;
+}
+
+.comparison-panel h3 {
+  margin-top: 0;
+}
+
+.comparison-verdict {
+  font-weight: 600;
+  margin: 0.75rem 0;
+  padding: 0.5rem 0.75rem;
+  border-radius: 6px;
+}
+
+.comparison-verdict.positive {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.comparison-verdict.negative {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.chart-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1rem;
+}
+
+.chart-panel {
+  background: #f8fafc;
+  border-radius: 8px;
+  padding: 1rem;
+}
+
+.chart-panel h3 {
+  margin-top: 0;
+}
+
+.card {
+  background: white;
+  border-radius: 8px;
+  padding: 1.5rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  margin-bottom: 1.5rem;
+}
+
+.card h2 {
+  margin-top: 0;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 1rem;
+}
+
+.form-grid .full-width {
+  grid-column: 1 / -1;
+}
+
+label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+input,
+select {
+  padding: 0.5rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  font-size: 1rem;
+}
+
+button {
+  background: #2563eb;
+  color: white;
+  border: none;
+  padding: 0.75rem 1.5rem;
+  border-radius: 4px;
+  font-size: 1rem;
+  cursor: pointer;
+  margin-top: 1rem;
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.error {
+  color: #dc2626;
+  background: #fef2f2;
+  padding: 0.75rem;
+  border-radius: 4px;
+  margin-top: 1rem;
+}
+
+.warning {
+  color: #b45309;
+  background: #fffbeb;
+  padding: 0.75rem;
+  border-radius: 4px;
+  margin-top: 0.5rem;
+}
+
+.success {
+  color: #15803d;
+  background: #f0fdf4;
+  padding: 1rem;
+  border-radius: 4px;
+  margin-top: 1rem;
+}
+
+.result-price {
+  font-size: 2rem;
+  font-weight: 700;
+  color: #2563eb;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+th,
+td {
+  padding: 0.75rem;
+  text-align: left;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+th {
+  background: #f8fafc;
+  font-weight: 600;
+}
+
+.metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 1rem;
+}
+
+.metric-card {
+  background: #f8fafc;
+  padding: 1rem;
+  border-radius: 6px;
+  text-align: center;
+}
+
+.metric-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+}
+
+.metric-label {
+  font-size: 0.75rem;
+  color: #64748b;
+  margin-top: 0.25rem;
+}
+
+.badge {
+  display: inline-block;
+  padding: 0.125rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  background: #e2e8f0;
+}
+
+.badge-warning {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+@media (max-width: 640px) {
+  .main {
+    padding: 1rem;
+  }
+
+  table {
+    display: block;
+    overflow-x: auto;
+  }
+}

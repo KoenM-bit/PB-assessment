@@ -1,0 +1,12 @@
+resources:
+  model_serving_endpoint:
+    house_price_serving:
+      name: house-price-serving
+      config:
+        served_entities:
+          - entity_name: house_price_model
+            entity_version: latest
+            workload_size: Small
+            scale_to_zero_enabled: true
+            environment_vars:
+              MODEL_ALIAS: ${var.model_alias}

@@ -1,0 +1,44 @@
+# Dependencies
+node_modules/
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# Build outputs
+apps/web/dist/
+.netlify/
+*.log
+
+# ML artifacts
+ml/mlruns/
+ml/artifacts/
+ml/.pytest_cache/
+mlflow.db
+mlruns/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+
+# Local data stores
+data/local/
+*.db
+
+# Databricks
+.databricks/

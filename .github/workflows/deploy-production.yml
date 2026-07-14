@@ -1,0 +1,43 @@
+name: Deploy Production
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "Type 'deploy' to confirm production promotion"
+        required: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check confirmation
+        if: inputs.confirm != 'deploy'
+        run: |
+          echo "Confirmation failed. Type 'deploy' to proceed."
+          exit 1
+
+  deploy:
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run full test suite
+        run: |
+          pip install -e "ml/[dev]"
+          cd ml && pytest -v
+          cd ../apps/web && npm install && npm test -- --run
+
+      - name: Deploy Netlify production
+        run: echo "Configure NETLIFY_AUTH_TOKEN and NETLIFY_PRODUCTION_SITE_ID"
+        # netlify deploy --prod --context production
+
+      - name: Promote model to champion
+        run: echo "Set MLflow champion alias to approved version"
+        # databricks bundle deploy -t prod
+
+      - name: Verify rollback target
+        run: echo "Confirm previous_champion alias is set"

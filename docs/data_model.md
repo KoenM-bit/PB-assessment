@@ -1,0 +1,105 @@
+# Data Model
+
+## Medallion Architecture
+
+```mermaid
+flowchart LR
+  Source[Synthetic_CSV] --> Bronze
+  Bronze --> Silver
+  Silver --> GoldFeatures[gold.listing_features]
+  Silver --> Rejected[silver.listings_rejected]
+  API[Netlify_API] --> GoldPreds[gold.predictions]
+  API --> GoldActuals[gold.actual_sales]
+  GoldPreds --> GoldEval[gold.model_evaluations]
+  GoldActuals --> GoldEval
+  GoldPreds --> GoldFeatMon[gold.feature_monitoring]
+```
+
+## Bronze: `bronze.listings_raw`
+
+Raw source data with ingestion metadata. Minimal transformation.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| listing_id | STRING | Primary key |
+| listing_timestamp | TIMESTAMP | When listed |
+| region, postcode | STRING | Location |
+| latitude, longitude | DOUBLE | Coordinates |
+| surface_area | DOUBLE | m² |
+| number_of_rooms, number_of_bedrooms | INT | Room counts |
+| build_year | INT | Construction year |
+| energy_label | STRING | A++ to G |
+| property_type | STRING | apartment, terraced_house, etc. |
+| garden | BOOLEAN | Has garden |
+| asking_price, sale_price | DOUBLE | Prices (nullable) |
+| sale_date | DATE | Sale date (nullable) |
+| ingestion_timestamp | TIMESTAMP | When ingested |
+| ingestion_date | DATE | Partition key (date of ingest) |
+| source_file | STRING | Lineage |
+
+## Silver: `silver.listings_clean`
+
+Validated, typed, deduplicated listings with data-quality flags.
+
+**Validation rules:**
+- `surface_area > 0`
+- `number_of_rooms > 0`
+- `build_year <= current year`
+- Valid energy label and property type
+- Coordinates within NL bounding box
+
+Invalid rows → `silver.listings_rejected`.
+
+## Gold Tables
+
+### `gold.listing_features`
+
+Model-ready features with time-aware aggregates (no leakage).
+
+| Feature | Source |
+|---------|--------|
+| house_age | snapshot_date − build_year |
+| surface_per_room | surface / rooms |
+| energy_label_score | mapping |
+| surface_x_energy | interaction |
+| dist_to_city_centre_km | haversine |
+| region_median_price_per_sqm | historical aggregate (as-of snapshot) |
+| month, quarter | from snapshot date |
+
+### `gold.predictions`
+
+Online prediction log (append-only).
+
+### `gold.actual_sales`
+
+Actual sale results linked to predictions (does not overwrite predictions).
+
+### `gold.model_evaluations`
+
+Precomputed retrospective metrics by segment and time window.
+
+### `gold.feature_monitoring`
+
+Training vs recent feature distributions.
+
+### `gold.serving_metrics`
+
+API latency, errors, timeouts.
+
+## Feature Ownership
+
+| Transformation | Layer |
+|----------------|-------|
+| Dtype coercion, dedup, validation | Bronze → Silver |
+| Historical aggregates | Silver → Gold |
+| Row-level features (age, distance) | Shared sklearn pipeline |
+| Out-of-range warnings | Serving + API |
+
+## Environment Separation
+
+| Catalog | Environment |
+|---------|-------------|
+| `house_price_staging` | local, staging |
+| `house_price_prod` | production |
+
+Each catalog has `bronze`, `silver`, `gold` schemas.
