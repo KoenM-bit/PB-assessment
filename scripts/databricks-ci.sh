@@ -58,9 +58,9 @@ case "$COMMAND" in
     ;;
   run-pipeline)
     require_token
-    GIT_SHA="${GITHUB_SHA:-$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || echo unknown)}"
-    echo "==> Run full ML pipeline (target=${BTARGET}, git_commit=${GIT_SHA})"
-    (cd "$ROOT/databricks" && databricks bundle run full_ml_pipeline -t "$BTARGET" --var "git_commit=${GIT_SHA}")
+    GIT_SHA="${GITHUB_SHA:-$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || echo "")}"
+    echo "==> Run full ML pipeline (target=${BTARGET}, git_commit=${GIT_SHA:-<none>})"
+    (cd "$ROOT/databricks" && databricks bundle run full_ml_pipeline -t "$BTARGET" --params "git_commit=${GIT_SHA}")
     ;;
   deploy-serving)
     require_token
@@ -103,6 +103,10 @@ case "$COMMAND" in
     require_token
     "$0" bundle-deploy staging
     "$0" run-pipeline staging
+    ;;
+  staging-pipeline-deploy)
+    require_token
+    "$0" staging-pipeline staging
     "$0" deploy-serving staging
     ;;
   production-pipeline)
@@ -125,7 +129,8 @@ case "$COMMAND" in
     echo "  verify                 Health-check Databricks connectivity" >&2
     echo "  init-catalog           Create Unity Catalog tables" >&2
     echo "  bootstrap-production   Init prod catalog + deploy prod serving" >&2
-    echo "  staging-pipeline       bundle + wheel + pipeline + deploy-serving (staging)" >&2
+    echo "  staging-pipeline         bundle + pipeline (experiment, no serving deploy)" >&2
+    echo "  staging-pipeline-deploy  pipeline + deploy-serving (after promote-challenger)" >&2
     echo "  production-pipeline    bundle prod + promote-to-production" >&2
     exit 1
     ;;

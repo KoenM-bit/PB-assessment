@@ -12,6 +12,7 @@ on:
         type: choice
         options:
           - staging-pipeline
+          - staging-pipeline-deploy
           - production-pipeline
           - bundle-deploy
           - upload-wheel
@@ -104,9 +105,9 @@ jobs:
           echo "Changed files:"
           echo "$CHANGED"
 
-          if echo "$CHANGED" | grep -q '^ml/'; then
+          if echo "$CHANGED" | grep -qE '^(ml/src/|databricks/notebooks/)'; then
             echo "command=staging-pipeline" >> "$GITHUB_OUTPUT"
-            echo "Auto: ml/ changed → full staging pipeline" >> "$GITHUB_STEP_SUMMARY"
+            echo "Auto: training code changed → pipeline (no serving deploy)" >> "$GITHUB_STEP_SUMMARY"
           else
             echo "command=bundle-deploy" >> "$GITHUB_OUTPUT"
             echo "Auto: config-only change → bundle-deploy only (no retrain)" >> "$GITHUB_STEP_SUMMARY"

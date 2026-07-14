@@ -95,6 +95,9 @@ resources:
 
     train_model:
       name: "[${bundle.target}] Train Model"
+      parameters:
+        - name: git_commit
+          default: ""
       environments:
         - environment_key: serverless
           spec:
@@ -108,7 +111,7 @@ resources:
             notebook_path: ./notebooks/04_train_model.py
             base_parameters:
               catalog: ${var.catalog}
-              git_commit: ${var.git_commit}
+              git_commit: "{{job.parameters.git_commit}}"
               wheel_path: ${var.ml_wheel_path}
 
     evaluate_model:
@@ -153,6 +156,9 @@ resources:
 
     full_ml_pipeline:
       name: "[${bundle.target}] Full ML Pipeline"
+      parameters:
+        - name: git_commit
+          default: ""
       environments:
         - environment_key: serverless
           spec:
@@ -194,7 +200,7 @@ resources:
             notebook_path: ./notebooks/04_train_model.py
             base_parameters:
               catalog: ${var.catalog}
-              git_commit: ${var.git_commit}
+              git_commit: "{{job.parameters.git_commit}}"
               wheel_path: ${var.ml_wheel_path}
         - task_key: evaluate
           depends_on:

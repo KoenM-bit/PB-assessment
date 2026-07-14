@@ -170,6 +170,23 @@ def check_token_scopes(host: str, token: str) -> list[str]:
     return missing
 
 
+def _endpoint_serves_version(
+    host: str, token: str, endpoint: str, model_name: str, version: str
+) -> bool:
+    try:
+        status_resp = curl_json("GET", f"{host}/api/2.0/serving-endpoints/{endpoint}", token)
+    except RuntimeError:
+        return False
+    state = status_resp.get("state") or {}
+    if state.get("ready") != "READY":
+        return False
+    entities = status_resp.get("config", {}).get("served_entities") or []
+    return any(
+        entity.get("entity_name") == model_name and str(entity.get("entity_version")) == str(version)
+        for entity in entities
+    )
+
+
 def deploy_endpoint(
     host: str,
     token: str,
@@ -290,6 +307,10 @@ def deploy_from_registry(
         print("    Run the train job or pipeline first.", file=sys.stderr)
         return 1
     print(f"    {alias} -> version {serve_version}")
+
+    if _endpoint_serves_version(host, token, endpoint, model_name, serve_version):
+        print(f"    Endpoint '{endpoint}' already serves version {serve_version} — no update needed")
+        return 0
 
     return deploy_endpoint(host, token, model_name, serve_version, endpoint)
 

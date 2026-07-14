@@ -54,7 +54,7 @@ seed:
 	cd ml && python -m house_price_ml.data.synthetic --output ../data/sample/listings.csv --rows 500
 
 train:
-	@echo "Logs experiment to Databricks (no @challenger). Promote with: make promote-challenger RUN_ID=<id>"
+	@echo "Experiment + UC version (no @challenger). Go live: make promote-challenger RUN_ID=<id>"
 	cd ml && python -m house_price_ml.models.train --data ../data/sample/listings.csv
 
 promote-challenger:
@@ -127,6 +127,10 @@ upload-ml-wheel:
 databricks-staging-pipeline:
 	chmod +x scripts/databricks-ci.sh
 	./scripts/databricks-ci.sh staging-pipeline staging
+
+databricks-staging-pipeline-deploy:
+	chmod +x scripts/databricks-ci.sh
+	./scripts/databricks-ci.sh staging-pipeline-deploy staging
 
 databricks-production-pipeline:
 	chmod +x scripts/databricks-ci.sh

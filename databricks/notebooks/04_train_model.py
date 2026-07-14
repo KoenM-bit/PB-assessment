@@ -1,14 +1,17 @@
 # Databricks notebook source
-# Train and log to MLflow Experiments (no alias — promote separately).
+# Train: log experiment + register UC version (no @challenger alias).
 
 # COMMAND ----------
 
+import os
 from pathlib import Path
 
 from house_price_ml.models.train import train
 
 catalog = dbutils.widgets.get("catalog") or "house_price_staging"
-git_commit = dbutils.widgets.get("git_commit") or None
+widget_commit = dbutils.widgets.get("git_commit")
+if widget_commit and widget_commit not in ("unknown", "none", ""):
+    os.environ["GIT_COMMIT"] = widget_commit
 
 gold_df = spark.table(f"{catalog}.gold.listing_features").toPandas()
 silver_df = spark.table(f"{catalog}.silver.listings_clean").toPandas()
@@ -22,9 +25,9 @@ train(
     "random_forest",
     out,
     catalog=catalog,
-    git_commit=git_commit,
+    git_commit=widget_commit if widget_commit not in ("unknown", "none", "") else None,
     data_source=f"{catalog}.gold.listing_features",
 )
 
 print("Training complete. See MLflow experiment /Shared/house_price_prediction")
-print("To make a run live in staging: promote-challenger with the run ID, then deploy-serving-from-registry")
+print("Model registered without alias. To go live: promote-challenger, then deploy-serving-from-registry")

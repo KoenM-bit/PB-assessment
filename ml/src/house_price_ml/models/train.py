@@ -29,11 +29,11 @@ from house_price_ml.serving.mlflow_model import build_sklearn_pipeline, save_mod
 
 
 def _git_commit(explicit: str | None = None) -> str:
-    if explicit:
+    if explicit and explicit not in ("unknown", "none", ""):
         return explicit
     for key in ("GIT_COMMIT", "GITHUB_SHA"):
         value = os.environ.get(key, "").strip()
-        if value:
+        if value and value not in ("unknown", "none"):
             return value
     try:
         return (
@@ -103,14 +103,12 @@ def _log_json_artifact(payload: dict | list, filename: str) -> None:
         Path(temp_path).unlink(missing_ok=True)
 
 
-def _register_model_if_requested(
+def _register_model(
     settings: Settings,
     catalog: str | None,
-    register_alias: str | None,
     model_path: Path,
+    register_alias: str | None,
 ) -> str | None:
-    if not register_alias:
-        return None
     if not catalog:
         return None
     if not _can_register_to_uc(settings):
@@ -125,11 +123,14 @@ def _register_model_if_requested(
 
     registered = mlflow.register_model(model_uri=model_uri, name=model_name)
     version = str(registered.version)
-    client = MlflowClient(registry_uri=mlflow.get_registry_uri())
-    client.set_registered_model_alias(model_name, register_alias, version)
     mlflow.log_param("registered_model_name", model_name)
     mlflow.log_param("registered_model_version", version)
-    mlflow.log_param("registered_model_alias", register_alias)
+
+    if register_alias:
+        client = MlflowClient(registry_uri=mlflow.get_registry_uri())
+        client.set_registered_model_alias(model_name, register_alias, version)
+        mlflow.log_param("registered_model_alias", register_alias)
+
     return version
 
 
@@ -139,12 +140,15 @@ def train(
     output_dir: Path | None = None,
     *,
     catalog: str | None = None,
+    register_model: bool | None = None,
     register_alias: str | None = None,
     git_commit: str | None = None,
     data_source: str | None = None,
 ) -> Path:
     settings = get_settings()
     log_catalog = catalog or settings.databricks_catalog
+    if register_model is None:
+        register_model = _can_register_to_uc(settings)
     resolved_git_commit = _git_commit(git_commit)
     resolved_data_source = data_source or str(data_path)
     tracking_uri = configure_mlflow(settings)
@@ -316,19 +320,25 @@ def train(
         holdout.to_csv(holdout_path, index=False)
         mlflow.log_artifact(str(holdout_path), artifact_path="reports")
 
-        registered_version = _register_model_if_requested(
-            settings, catalog, register_alias, model_path
-        )
+        registered_version = None
+        if register_model:
+            registered_version = _register_model(
+                settings, log_catalog, model_path, register_alias
+            )
         if registered_version:
-            print(
-                f"Registered {catalog}.{settings.databricks_schema}.house_price_model "
-                f"v{registered_version} as @{register_alias}"
-            )
+            if register_alias:
+                print(
+                    f"Registered {log_catalog}.{settings.databricks_schema}.house_price_model "
+                    f"v{registered_version} as @{register_alias}"
+                )
+            else:
+                print(
+                    f"Registered {log_catalog}.{settings.databricks_schema}.house_price_model "
+                    f"v{registered_version} (no alias — not live in staging)"
+                )
+                print("Promote when ready: make promote-challenger RUN_ID=<run-id>")
         else:
-            print(
-                "Experiment logged (no model alias set). "
-                "Promote a run with: make promote-challenger RUN_ID=<run-id>"
-            )
+            print("Experiment logged (model not registered to Unity Catalog).")
 
     return out
 
@@ -396,7 +406,12 @@ def main() -> None:
     parser.add_argument(
         "--register-alias",
         default=None,
-        help="Register model and set this UC alias (e.g. challenger). Omit for experiment-only.",
+        help="Also set this UC alias (e.g. challenger). Default: register version only.",
+    )
+    parser.add_argument(
+        "--no-register",
+        action="store_true",
+        help="Skip Unity Catalog registration (experiment logging only).",
     )
     parser.add_argument("--git-commit", default=None, help="Git SHA for experiment tags")
     parser.add_argument("--data-source", default=None, help="Human-readable data source label")
@@ -407,6 +422,7 @@ def main() -> None:
         args.model_type,
         args.output,
         catalog=args.catalog or settings.databricks_catalog,
+        register_model=False if args.no_register else None,
         register_alias=args.register_alias,
         git_commit=args.git_commit,
         data_source=args.data_source,
