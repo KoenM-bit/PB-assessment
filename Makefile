@@ -1,6 +1,6 @@
 .PHONY: install install-ml install-web dev test test-ml test-web lint lint-ml lint-web seed train clean
 .PHONY: verify-databricks databricks-init-catalog databricks-init-prod
-.PHONY: deploy-serving deploy-serving-staging deploy-serving-prod promote-champion bootstrap-production
+.PHONY: deploy-serving deploy-serving-staging deploy-serving-prod promote-champion promote-to-production bootstrap-production
 .PHONY: deploy-netlify deploy-netlify-prod netlify-build
 
 install: install-ml install-web
@@ -79,6 +79,16 @@ promote-champion:
 	chmod +x scripts/promote-champion.py
 	cd ml && python ../scripts/promote-champion.py
 
+promote-to-production:
+	chmod +x scripts/promote-to-production.py
+	@if [ "$$CONFIRM_PROMOTE" != "yes" ]; then \
+		echo "Set CONFIRM_PROMOTE=yes to promote staging @challenger to production @champion."; \
+		echo "  CONFIRM_PROMOTE=yes make promote-to-production"; \
+		echo "Dry run: cd ml && python ../scripts/promote-to-production.py --dry-run"; \
+		exit 1; \
+	fi
+	cd ml && python ../scripts/promote-to-production.py
+
 bootstrap-production:
 	chmod +x scripts/bootstrap-production.sh scripts/deploy-serving.sh
 	./scripts/bootstrap-production.sh
@@ -113,6 +123,10 @@ setup-github-protection:
 setup-netlify-previews:
 	chmod +x scripts/setup-netlify-previews.sh
 	./scripts/setup-netlify-previews.sh
+
+setup-netlify-production:
+	chmod +x scripts/setup-netlify-production.sh
+	./scripts/setup-netlify-production.sh
 
 clean:
 	rm -rf apps/web/dist ml/.pytest_cache ml/.mypy_cache ml/.ruff_cache ml/artifacts

@@ -22,12 +22,21 @@
 
 ### Configuration
 
-Set in Netlify dashboard (never in client code):
+Set **once** in Netlify dashboard (shared across staging + production on free tier):
 - `DATABRICKS_HOST`
 - `DATABRICKS_TOKEN`
-- `DATABRICKS_SERVING_ENDPOINT`
 - `DATABRICKS_SQL_WAREHOUSE_ID`
 - `DEMO_WRITE_TOKEN`
+- `USE_MOCK_DATABRICKS=false`
+
+Staging vs production **endpoint and catalog** are chosen automatically:
+- `netlify.toml` sets `APP_ENV` per branch/context
+- `netlify/functions/_shared/config.ts` maps `APP_ENV` → serving endpoint + catalog
+
+| `APP_ENV` | Endpoint | Catalog | Alias |
+|-----------|----------|---------|-------|
+| staging | `house-price-serving` | `house_price_staging` | challenger |
+| production | `house-price-serving-prod` | `house_price_prod` | champion |
 
 ## Databricks Deployment
 

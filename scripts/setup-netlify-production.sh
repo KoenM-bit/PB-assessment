@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Configure Netlify production (master branch) for real Databricks + champion model.
-# Free tier: shares house-price-serving with staging (separate prod endpoint not required).
+# Set shared Databricks secrets in Netlify (same values for all deploy contexts).
+# Staging vs production routing is handled by netlify.toml + config.ts (free tier).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -20,16 +20,12 @@ fi
 set_var() {
   local key="$1"
   local value="$2"
-  echo "==> ${key} (production context)"
-  netlify env:set "$key" "$value" --context production --force
+  echo "==> ${key} (all contexts)"
+  netlify env:set "$key" "$value" --force
 }
 
-echo "==> Configuring Netlify production env for real Databricks"
+echo "==> Configuring shared Netlify env (secrets only; routing is in netlify.toml)"
 set_var USE_MOCK_DATABRICKS false
-set_var APP_ENV production
-set_var MODEL_ALIAS champion
-set_var DATABRICKS_CATALOG "${DATABRICKS_CATALOG:-house_price_staging}"
-set_var DATABRICKS_SERVING_ENDPOINT "${DATABRICKS_SERVING_ENDPOINT:-house-price-serving}"
 set_var DATABRICKS_SCHEMA "${DATABRICKS_SCHEMA:-gold}"
 set_var SERVING_TIMEOUT_MS "${SERVING_TIMEOUT_MS:-30000}"
 set_var SQL_MAX_WAIT_MS "${SQL_MAX_WAIT_MS:-25000}"
@@ -48,7 +44,7 @@ if [ -n "${DEMO_WRITE_TOKEN:-}" ]; then
 fi
 
 echo ""
-echo "OK: Production env configured."
-echo "Next: merge staging → master, then trigger a production deploy:"
-echo "  git checkout master && git merge staging && git push origin master"
-echo "  netlify deploy --prod"
+echo "OK: Shared secrets configured."
+echo "Staging/production endpoint routing is automatic via APP_ENV (see netlify.toml)."
+echo "Redeploy both branches after merging:"
+echo "  git push origin staging && git push origin master"

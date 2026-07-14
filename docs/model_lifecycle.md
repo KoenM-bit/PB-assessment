@@ -78,3 +78,12 @@ The served model accepts human-readable listing JSON, not undocumented feature v
 ## Rollback
 
 Set `champion` alias to `previous_champion` version in MLflow registry. No frontend changes required.
+
+## Promote staging → production
+
+```bash
+cd ml && python ../scripts/promote-to-production.py --dry-run
+CONFIRM_PROMOTE=yes make promote-to-production
+```
+
+Copies `house_price_staging.gold.house_price_model@challenger` into `house_price_prod`, sets `champion` / `previous_champion`, deploys `house-price-serving-prod`, and writes `ml/artifacts/promotions/last-promotion.json`.

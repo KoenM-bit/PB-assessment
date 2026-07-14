@@ -21,14 +21,14 @@
   status = 200
 
 [context.production]
-  environment = { APP_ENV = "production", MODEL_ALIAS = "champion" }
+  environment = { APP_ENV = "production", MODEL_ALIAS = "champion", DATABRICKS_SERVING_ENDPOINT = "house-price-serving-prod", DATABRICKS_CATALOG = "house_price_prod" }
 
 # Deploy context for the `staging` branch (set production branch to `master` in Netlify UI)
 [context.staging]
-  environment = { APP_ENV = "staging", MODEL_ALIAS = "challenger" }
+  environment = { APP_ENV = "staging", MODEL_ALIAS = "challenger", DATABRICKS_SERVING_ENDPOINT = "house-price-serving", DATABRICKS_CATALOG = "house_price_staging" }
 
 [context.deploy-preview]
-  environment = { APP_ENV = "staging", MODEL_ALIAS = "challenger" }
+  environment = { APP_ENV = "staging", MODEL_ALIAS = "challenger", DATABRICKS_SERVING_ENDPOINT = "house-price-serving", DATABRICKS_CATALOG = "house_price_staging" }
 
 # PR deploy previews: enabled via scripts/setup-netlify-previews.sh (free tier).
 # Each PR gets a unique URL: deploy-preview-N--pb-assessment.netlify.app
