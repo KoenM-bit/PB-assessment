@@ -54,17 +54,23 @@ Invalid rows → `silver.listings_rejected`.
 
 ### `gold.listing_features`
 
-Model-ready features with time-aware aggregates (no leakage).
+Model-ready features. Safe to build on the full silver table **before** train/test split
+because target-derived fields are point-in-time (each row only sees sales with
+`sale_date < feature_snapshot_date`). Do **not** use global `groupby` medians here.
 
-| Feature | Source |
-|---------|--------|
-| house_age | snapshot_date − build_year |
-| surface_per_room | surface / rooms |
-| energy_label_score | mapping |
-| surface_x_energy | interaction |
-| dist_to_city_centre_km | haversine |
-| region_median_price_per_sqm | historical aggregate (as-of snapshot) |
-| month, quarter | from snapshot date |
+| Feature | Source | Split-safe? |
+|---------|--------|-------------|
+| house_age | snapshot_date − build_year | Yes (row-wise) |
+| surface_per_room | surface / rooms | Yes |
+| energy_label_score | mapping | Yes |
+| surface_x_energy | interaction | Yes |
+| dist_to_city_centre_km | haversine | Yes |
+| region_median_price_per_sqm | historical aggregate (as-of snapshot) | Yes (past-only) |
+| month, quarter | from snapshot date | Yes |
+
+**Note:** `train.py` fits a separate static region-median lookup on the train split
+for model serving (see `BusinessBaseline` / `raw_to_feature_frame`). That path is
+independent of the gold column above.
 
 ### `gold.predictions`
 

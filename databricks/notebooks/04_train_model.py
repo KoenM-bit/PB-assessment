@@ -17,7 +17,7 @@ gold_df = spark.table(f"{catalog}.gold.listing_features").toPandas()
 silver_df = spark.table(f"{catalog}.silver.listings_clean").toPandas()
 merged = silver_df.merge(gold_df, on="listing_id", suffixes=("", "_gold"))
 tmp_path = "/tmp/train_data.csv"
-merged.to_csv(tmp_path, index=False)
+merged.to_csv(tmp_path, index=False) ## todo: maak de train functie zo dat het de data direct als dataframe meegeeft
 
 out = Path("/tmp/model_output")
 train(

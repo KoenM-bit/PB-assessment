@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from house_price_ml.config.constants import PRICE_CATEGORY_BOUNDS
+from house_price_ml.config import PRICE_CATEGORY_BOUNDS
 
 
 def price_category(price: float) -> str:

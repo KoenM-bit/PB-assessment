@@ -59,25 +59,36 @@ def _can_register_to_uc(settings: Settings) -> bool:
     return bool(settings.databricks_host and settings.databricks_token)
 
 
+def _make_estimator(model_type: str):
+    if model_type == "ridge":
+        return Ridge(alpha=1.0)
+    return RandomForestRegressor(
+        n_estimators=200,
+        random_state=42,
+        n_jobs=-1,
+        max_depth=12,
+    )
+
+
+def _region_medians_dict_from_df(df: pd.DataFrame) -> dict[tuple[str, str], float]:
+    """Region×property_type median price/sqm lookup from a dataframe slice."""
+    baseline = BusinessBaseline().fit(df)
+    return {tuple(k.split("|")): v for k, v in baseline.lookup.items()}
+
+
 def _walk_forward_model_maes(
     splits: list[tuple[pd.DataFrame, pd.DataFrame]],
     model_type: str,
-    region_medians_dict: dict[tuple[str, str], float],
 ) -> list[float]:
     maes: list[float] = []
-    estimators = {
-        "ridge": Ridge(alpha=1.0),
-        "random_forest": RandomForestRegressor(
-            n_estimators=200, random_state=42, n_jobs=-1, max_depth=12
-        ),
-    }
     for train_fold, val_fold in splits:
-        estimator = estimators.get(model_type, estimators["random_forest"])
-        fold_pipeline = build_sklearn_pipeline(estimator)
-        X_tr = raw_to_feature_frame(train_fold.to_dict("records"), region_medians_dict)
+        # Recompute region medians from the fold train slice only (no future leakage).
+        fold_medians = _region_medians_dict_from_df(train_fold)
+        fold_pipeline = build_sklearn_pipeline(_make_estimator(model_type))
+        X_tr = raw_to_feature_frame(train_fold.to_dict("records"), fold_medians)
         y_tr = train_fold["label_sale_price"].values.astype(float)
         fold_pipeline.fit(X_tr, y_tr)
-        X_val = raw_to_feature_frame(val_fold.to_dict("records"), region_medians_dict)
+        X_val = raw_to_feature_frame(val_fold.to_dict("records"), fold_medians)
         y_val = val_fold["label_sale_price"].values.astype(float)
         y_hat = fold_pipeline.predict(X_val)
         maes.append(compute_metrics(y_val, y_hat)["mae"])
@@ -153,6 +164,11 @@ def train(
     resolved_data_source = data_source or str(data_path)
     tracking_uri = configure_mlflow(settings)
 
+    ## todo: we bouwen hier de dataset weer opnieuw op, terwijl die al gemaakt is. Dat is dubbel en onnodig.
+    # Gold before split is intentional: region_median_price_per_sqm is point-in-time
+    # (sale_date < snapshot per row). Row-wise features are also split-safe.
+    # Training uses raw_to_feature_frame + static train-only region medians (serving
+    # contract), not gold["region_median_price_per_sqm"] — see aggregates.py docstrings.
     raw = pd.read_csv(data_path, parse_dates=["listing_timestamp", "sale_date"])
     clean, rejected = bronze_to_silver(raw)
     gold = silver_to_gold_features(clean)
@@ -169,16 +185,9 @@ def train(
         for p in train_df["property_type"].unique()
     }
 
-    estimators = {
-        "ridge": Ridge(alpha=1.0),
-        "random_forest": RandomForestRegressor(n_estimators=100, random_state=42, n_jobs=-1),
-    }
-    estimator = estimators.get(model_type, estimators["random_forest"])
-    if isinstance(estimator, RandomForestRegressor):
-        estimator = RandomForestRegressor(n_estimators=200, random_state=42, n_jobs=-1, max_depth=12)
-    pipeline = build_sklearn_pipeline(estimator)
+    pipeline = build_sklearn_pipeline(_make_estimator(model_type))
 
-    region_medians_dict = {tuple(k.split("|")): v for k, v in region_medians.items()}
+    region_medians_dict = _region_medians_dict_from_df(train_df)
     X_train = raw_to_feature_frame(train_df.to_dict("records"), region_medians_dict)
     feature_names = list(X_train.columns)
     pipeline.fit(X_train, y_train)
@@ -189,7 +198,7 @@ def train(
         y_v = val["label_sale_price"].values.astype(float)
         wf_baseline_maes.append(compute_metrics(y_v, bl.predict(val))["mae"])
 
-    wf_model_maes = _walk_forward_model_maes(splits, model_type, region_medians_dict)
+    wf_model_maes = _walk_forward_model_maes(splits, model_type)
 
     X_test = raw_to_feature_frame(test_df.to_dict("records"), region_medians_dict)
     y_test = test_df["label_sale_price"].values.astype(float)

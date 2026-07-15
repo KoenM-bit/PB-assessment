@@ -11,7 +11,13 @@ def compute_region_median_price_per_sqm(
 ) -> pd.DataFrame:
     """
     Compute region + property_type median price per sqm using only past sales.
-    Avoids leakage by filtering sale_date < snapshot_date per row.
+
+    Point-in-time: for each row, only rows with ``sale_date < feature_snapshot_date``
+    are used. This allows ``silver_to_gold_features`` to run on the full dataset
+    before train/test split without leaking future sale prices into earlier rows.
+
+    Do not replace with a global ``groupby(...).transform("median")`` — that would
+    leak target statistics across splits.
     """
     if df.empty:
         return df
@@ -49,7 +55,16 @@ def compute_region_median_price_per_sqm(
 
 
 def silver_to_gold_features(df: pd.DataFrame) -> pd.DataFrame:
-    """Build gold listing features from silver clean data."""
+    """Build gold listing features from silver clean data.
+
+    Row-wise features (house_age, surface_per_room, geo, calendar) are safe to
+    compute before train/test split. Target-derived ``region_median_price_per_sqm``
+    is also safe here because it is point-in-time (see
+    ``compute_region_median_price_per_sqm``).
+
+    Model training in ``train.py`` uses a separate static region-median lookup
+    (fitted on train only) for serving compatibility — not the gold column directly.
+    """
     from house_price_ml.features.energy import energy_label_to_score
     from house_price_ml.features.geo import distance_to_city_centre
 
