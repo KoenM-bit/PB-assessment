@@ -130,6 +130,8 @@ Staging keeps serving the **current** `@challenger` until you explicitly promote
 
 ### Morning — explore in Databricks
 
+See [experiment_workflow.md](experiment_workflow.md) for the three-lane model (lab notebook → batch experiment → official CI).
+
 1. Open **Repos → PB-assessment** (branch `staging`).
 2. Use notebooks under `databricks/notebooks/` and SQL on bronze/silver/gold tables for ad-hoc analysis.
 3. Use notebooks for **scratch work**. Move durable logic into `ml/src/house_price_ml/` when it should be tested properly.

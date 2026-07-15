@@ -43,6 +43,7 @@ x-train-base-parameters: &train_base_parameters
   enable_ablation: "{{job.parameters.enable_ablation}}"
   enable_explainability: "{{job.parameters.enable_explainability}}"
   register_model: "{{job.parameters.register_model}}"
+  mlflow_experiment: ""
 
 x-train-ml-environment: &train_ml_environment
   environment_key: serverless_ml
@@ -260,7 +261,7 @@ resources:
         - name: enable_explainability
           default: "true"
         - name: register_model
-          default: "true"
+          default: "false"
       environments:
         - environment_key: serverless
           spec:
@@ -304,6 +305,7 @@ resources:
             notebook_path: ./notebooks/04_train_model.py
             base_parameters:
               <<: *train_base_parameters
+              mlflow_experiment: "/Shared/house_price_prediction_lab"
         - task_key: error_analysis
           depends_on:
             - task_key: train

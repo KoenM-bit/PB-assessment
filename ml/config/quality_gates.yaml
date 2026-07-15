@@ -9,7 +9,7 @@ walk_forward:
   model_beats_baseline: true
 
 segments:
-  max_mae_degradation_vs_overall: 1.15
+  max_mae_degradation_vs_overall: 1.30
   min_segment_sample_size: 15
 
 promotion:

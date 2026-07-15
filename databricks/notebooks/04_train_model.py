@@ -28,6 +28,7 @@ enable_ablation = _widget("enable_ablation", "false")
 enable_explainability = _widget("enable_explainability", "false")
 model_type = _widget("model_type", "")
 register_model = parse_bool(_widget("register_model", "true"), default=True)
+mlflow_experiment = _widget("mlflow_experiment", "").strip() or None
 
 if widget_commit and widget_commit not in ("unknown", "none", ""):
     os.environ["GIT_COMMIT"] = widget_commit
@@ -61,7 +62,8 @@ print(
     f"Training rows={len(training_df)} | tuning={training_config.tuning.enabled} "
     f"| ablation={training_config.ablation.enabled} "
     f"| explainability={training_config.explainability.enabled} "
-    f"| register={register_model}"
+    f"| register={register_model} "
+    f"| mlflow_experiment={mlflow_experiment or '(default)'}"
 )
 
 out = Path("/tmp/model_output")
@@ -74,7 +76,10 @@ train(
     git_commit=widget_commit if widget_commit not in ("unknown", "none", "") else None,
     data_source=gold_table,
     table_versions=table_versions,
+    mlflow_experiment_name=mlflow_experiment,
 )
 
-print("Training complete. See MLflow experiment /Shared/house_price_prediction")
-print("Model registered without alias. To go live: promote-challenger, then deploy-serving-from-registry")
+lane = "official UC register" if register_model else "experiment (log only, no UC)"
+print(f"Training complete — {lane}. See MLflow experiment for run details.")
+if register_model:
+    print("Model registered without alias. To go live: promote-challenger, then deploy-serving-from-registry")

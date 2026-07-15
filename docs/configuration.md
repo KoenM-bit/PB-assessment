@@ -27,6 +27,7 @@ Staging and production values for catalog, endpoint, and alias are **hardcoded**
 | Databricks credentials | `.env` | Netlify dashboard (shared) | same | never in frontend |
 | SQL warehouse ID | `.env` | Netlify dashboard | same | Netlify env |
 | MLflow experiment | `/Shared/house_price_prediction` | same | same | `Settings` / scripts |
+| MLflow lab experiment | `/Shared/house_price_prediction_lab` | same | — | lab notebook + `ml_experiment_pipeline` |
 | MLflow tracking URI | `databricks` or sqlite (tests) | `databricks` | `databricks` | scripts set at runtime |
 | MLflow registry URI | `databricks-uc` | same | same | promotion scripts |
 | Mock Databricks | `USE_MOCK_DATABRICKS=true` (default) | `false` | `false` | `.env` / Netlify |
@@ -69,18 +70,20 @@ Do not rely on per-context Netlify UI variables for catalog/endpoint on the free
 | `enable_tuning` | `false` | `true` |
 | `enable_ablation` | `false` | `true` |
 | `enable_explainability` | `false` | `true` |
-| `register_model` | `true` | `true` |
+| `register_model` | `true` | `false` (log only, no UC) |
 
 Jobs:
 
 | Bundle job | Purpose |
 |------------|---------|
 | `full_ml_pipeline` | bronze→gold→train→error_analysis→evaluate (CI default) |
-| `ml_experiment_pipeline` | Same with tuning+ablation+SHAP enabled |
+| `ml_experiment_pipeline` | Same with tuning+ablation+SHAP enabled; **logs only** (no UC register) |
 | `train_model` | Train only (widgets for experiment flags) |
 | `error_analysis` | Residual/segment report from latest passed-gate MLflow run |
 
-Train tasks use serverless env with `optuna` + `shap` PyPI deps. Run experiment pipeline:
+Train tasks use serverless env with `optuna` + `shap` PyPI deps. See [experiment_workflow.md](experiment_workflow.md) for lab vs batch vs official lanes.
+
+Run experiment pipeline (no UC register):
 
 ```bash
 ./scripts/databricks-ci.sh run-experiment-pipeline staging
@@ -166,6 +169,7 @@ These are intentional: local scripts fail fast; deployed API allows more headroo
 
 - [deployment.md](deployment.md) — deploy and rollback procedures
 - [enterprise-workflow.md](enterprise-workflow.md) — daily development and promotion flow
+- [experiment_workflow.md](experiment_workflow.md) — lab vs batch vs official training lanes
 - [data_model.md](data_model.md) — training data path (`gold.training_frame`)
 
 ---

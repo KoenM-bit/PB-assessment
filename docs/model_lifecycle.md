@@ -33,12 +33,22 @@ flowchart TD
 - No random splits (prevents temporal leakage)
 - **Quality gates** (`ml/config/quality_gates.yaml`) enforced when `register_model=true` (Databricks notebook 04, `make train`)
 
+## Training lanes
+
+| Lane | `register_model` | MLflow experiment | UC register |
+|------|------------------|-------------------|-------------|
+| Lab notebook `00_ml_experiment_lab.py` | `false` | `/Shared/house_price_prediction_lab` | No |
+| `ml_experiment_pipeline` | `false` | `_lab` | No |
+| `full_ml_pipeline` | `true` | `/Shared/house_price_prediction` | Yes if gates pass |
+
+Full playbook: [experiment_workflow.md](experiment_workflow.md).
+
 ## Databricks jobs
 
 | Job | Train flags | Notes |
 |-----|-------------|-------|
 | `full_ml_pipeline` | tuning/ablation/SHAP off (fast CI path) | Includes `07_error_analysis` after train |
-| `ml_experiment_pipeline` | all experiment flags on | Optuna + SHAP deps on train task |
+| `ml_experiment_pipeline` | all experiment flags on; **no UC register** | Optuna + SHAP deps; MLflow `_lab` experiment |
 | `train_model` | configurable via job parameters | Standalone retrain on existing gold tables |
 | `error_analysis` | — | Latest `gates_passed=1` run → `gold.error_analysis_summary` |
 

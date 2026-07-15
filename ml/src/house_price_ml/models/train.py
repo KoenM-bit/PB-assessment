@@ -259,6 +259,7 @@ def train(
     table_versions: dict[str, int] | None = None,
     enforce_gates: bool | None = None,
     gates_path: Path | str | None = None,
+    mlflow_experiment_name: str | None = None,
 ) -> Path:
     settings = get_settings()
     resolved_config_path = resolve_training_config_path(config_path)
@@ -274,7 +275,8 @@ def train(
     resolved_git_commit = _git_commit(git_commit)
     data_path_str = str(data) if isinstance(data, Path) else "dataframe"
     resolved_data_source = data_source or data_path_str
-    tracking_uri = configure_mlflow(settings)
+    tracking_uri = configure_mlflow(settings, experiment_name=mlflow_experiment_name)
+    training_lane = "official" if register_model else "experiment"
 
     training_frame = load_training_frame(data)
     rejected_rows = 0
@@ -401,6 +403,7 @@ def train(
                 "data_source": resolved_data_source,
                 "training_config_path": str(resolved_config_path),
                 "quality_gates_path": str(resolved_gates_path),
+                "training_lane": training_lane,
             }
         )
         mlflow_params: dict[str, str | int | float] = {
@@ -671,6 +674,11 @@ def main() -> None:
         default=None,
         help="Quality gates YAML (default: ml/config/quality_gates.yaml)",
     )
+    parser.add_argument(
+        "--mlflow-experiment",
+        default=None,
+        help="Override MLflow experiment name (default: Settings.mlflow_experiment_name)",
+    )
     args = parser.parse_args()
     settings = get_settings()
     if args.no_register and args.register:
@@ -699,6 +707,7 @@ def main() -> None:
             table_versions=table_versions,
             enforce_gates=enforce_gates,
             gates_path=args.gates_config,
+            mlflow_experiment_name=args.mlflow_experiment,
         )
     except TrainingGateError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
