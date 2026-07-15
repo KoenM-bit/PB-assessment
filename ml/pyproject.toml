@@ -44,6 +44,7 @@ packages = ["src/house_price_ml"]
 "config/quality_gates.yaml" = "house_price_ml/config/quality_gates.yaml"
 "config/data.yaml" = "house_price_ml/config/data.yaml"
 "config/quality_gates_ci.yaml" = "house_price_ml/config/quality_gates_ci.yaml"
+"config/eda_lab.yaml" = "house_price_ml/config/eda_lab.yaml"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

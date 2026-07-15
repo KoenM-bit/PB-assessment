@@ -50,6 +50,10 @@ Best for interactive work in Databricks Repos:
 
 Default MLflow experiment: `/Shared/house_price_prediction_lab`.
 
+**EDA playbook:** edit [`ml/config/eda_lab.yaml`](../ml/config/eda_lab.yaml) to toggle sections, business hypotheses, and feature-matrix experiments. The notebook runs:
+
+1. Data quality → 2. Univariate → 3. Bivariate → 4. Correlation → 5. Business hypotheses → 6. Segment balance → 7. Feature matrix → 8. Model selection → 9. Train → 10. Gates → 11. Residuals → 12. SHAP
+
 ### Batch experiment (`ml_experiment_pipeline`)
 
 Best when you want a full bronze → gold → train run on staging data with experiment flags on, still **without** UC registration:
@@ -102,6 +106,7 @@ Before `git push origin staging`, commit:
 | [`ml/config/training.yaml`](../ml/config/training.yaml) | Hyperparameters; keep `tuning.enabled: false` for prod CI |
 | [`ml/config/quality_gates.yaml`](../ml/config/quality_gates.yaml) | Gate thresholds after lab gate drill-down |
 | [`ml/config/data.yaml`](../ml/config/data.yaml) | Synthetic profile or data assumptions |
+| [`ml/config/eda_lab.yaml`](../ml/config/eda_lab.yaml) | EDA sections, hypotheses, feature-matrix experiments |
 | `ml/src/` | Feature or training code changes |
 
 ---

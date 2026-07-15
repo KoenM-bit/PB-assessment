@@ -2,13 +2,15 @@
 # MAGIC %md
 # MAGIC # ML Experiment Lab
 # MAGIC
-# MAGIC Guided playbook for **explore → experiment → official CI** without registering Unity Catalog models.
+# MAGIC **Playbook:** Data quality → EDA → feature matrix → model selection → train → gates → residuals → SHAP
+# MAGIC
+# MAGIC Edit **`ml/config/eda_lab.yaml`** to toggle sections, hypotheses, and feature-matrix experiments.
 # MAGIC
 # MAGIC | Lane | UC register | MLflow experiment |
 # MAGIC |------|-------------|-------------------|
 # MAGIC | This notebook | No | `/Shared/house_price_prediction_lab` |
 # MAGIC | `ml_experiment_pipeline` | No | `_lab` |
-# MAGIC | `full_ml_pipeline` (push to staging) | Yes (if gates pass) | `/Shared/house_price_prediction` |
+# MAGIC | `full_ml_pipeline` | Yes (if gates pass) | `/Shared/house_price_prediction` |
 
 # COMMAND ----------
 
@@ -19,17 +21,32 @@
 
 import json
 import os
+import tempfile
 from pathlib import Path
 
 import mlflow
 import pandas as pd
 from mlflow import MlflowClient
 
+from house_price_ml.config.eda_lab_config import load_eda_lab_config
 from house_price_ml.config.training_config import load_training_config
-from house_price_ml.evaluation.gate_config import load_quality_gates
-from house_price_ml.evaluation.gates import evaluate_training_gates
+from house_price_ml.evaluation.gates import GateResult, evaluate_training_gates
+from house_price_ml.evaluation.metrics import compute_metrics, evaluate_by_segment
+from house_price_ml.evaluation.segments import price_category
 from house_price_ml.evaluation.splits import holdout_test_split
 from house_price_ml.jobs.databricks_train import apply_experiment_flags, parse_bool, training_config_from_job_params
+from house_price_ml.jobs.eda_lab import (
+    bivariate_vs_target,
+    correlation_report,
+    evaluate_business_hypotheses,
+    evaluate_data_quality_gates,
+    residual_analysis_report,
+    run_eda_playbook,
+    run_feature_matrix,
+    run_model_selection,
+    run_shap_report,
+    univariate_profile,
+)
 from house_price_ml.jobs.experiment_lab import (
     LAB_MLFLOW_EXPERIMENT,
     baseline_holdout_metrics,
@@ -62,6 +79,7 @@ dbutils.widgets.dropdown("enable_tuning", "false", ["true", "false"])
 dbutils.widgets.dropdown("enable_ablation", "false", ["true", "false"])
 dbutils.widgets.dropdown("enable_explainability", "false", ["true", "false"])
 dbutils.widgets.text("mlflow_experiment", LAB_MLFLOW_EXPERIMENT)
+dbutils.widgets.text("eda_config_path", "")
 
 catalog = _widget("catalog", "house_price_staging")
 data_source = _widget("data_source", "sample")
@@ -72,10 +90,15 @@ enable_tuning = parse_bool(_widget("enable_tuning", "false"))
 enable_ablation = parse_bool(_widget("enable_ablation", "false"))
 enable_explainability = parse_bool(_widget("enable_explainability", "false"))
 mlflow_experiment = _widget("mlflow_experiment", LAB_MLFLOW_EXPERIMENT)
+eda_config_path = _widget("eda_config_path", "").strip() or None
+
+eda_config = load_eda_lab_config(eda_config_path)
+training_config = load_training_config()
 
 tracking_uri = configure_lab_mlflow(mlflow_experiment)
 print("Lane contract: register_model=False — logs to MLflow lab experiment only (no UC version).")
 print(f"MLflow experiment: {mlflow_experiment}")
+print(f"EDA config: {eda_config_path or 'ml/config/eda_lab.yaml (default)'}")
 
 # COMMAND ----------
 
@@ -105,6 +128,8 @@ display(training_df.head(5))
 
 # MAGIC %md
 # MAGIC ## 3. Data quality
+# MAGIC
+# MAGIC Thresholds from `eda_lab.yaml` → `data_quality`.
 
 # COMMAND ----------
 
@@ -119,15 +144,79 @@ else:
     }
 
 print(json.dumps(dq, indent=2))
+if eda_config.sections.data_quality:
+    display(evaluate_data_quality_gates(dq, eda_config))
 if rejected_df is not None and len(rejected_df):
     display(rejected_df.head(10))
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 4. Segment explorer
+# MAGIC ## 4. Univariate EDA
+# MAGIC
+# MAGIC Distributions, skew warnings, IQR outlier rates (`eda_lab.yaml` → `univariate`).
 
 # COMMAND ----------
+
+if eda_config.sections.univariate:
+    uni = univariate_profile(training_df, eda_config)
+    display(uni)
+    skew_warn = uni[uni["skew_warning"] == True]  # noqa: E712
+    if len(skew_warn):
+        print("Columns with high skew:")
+        display(skew_warn[["column", "skew", "outlier_rate"]])
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## 5. Bivariate EDA
+# MAGIC
+# MAGIC Numeric correlations + categorical mean deltas vs `label_sale_price`.
+
+# COMMAND ----------
+
+if eda_config.sections.bivariate:
+    display(bivariate_vs_target(training_df, eda_config))
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## 6. Correlation matrix
+# MAGIC
+# MAGIC Multicollinearity flags + weak target signals (`eda_lab.yaml` → `correlation`).
+
+# COMMAND ----------
+
+if eda_config.sections.correlation:
+    corr_matrix, corr_flags = correlation_report(training_df, eda_config)
+    if not corr_matrix.empty:
+        display(corr_matrix)
+    if not corr_flags.empty:
+        print("Flagged pairs:")
+        display(corr_flags)
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## 7. Business hypotheses
+# MAGIC
+# MAGIC Edit `business_hypotheses` in `eda_lab.yaml` to add domain checks.
+
+# COMMAND ----------
+
+if eda_config.sections.business_hypotheses:
+    display(evaluate_business_hypotheses(training_df, eda_config))
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## 8. Segment balance
+# MAGIC
+# MAGIC Compare segment counts vs `quality_gates.yaml` `min_segment_sample_size`.
+
+# COMMAND ----------
+
+from house_price_ml.evaluation.gate_config import load_quality_gates
 
 gates_config = load_quality_gates()
 segment_report = segment_balance_report(training_df)
@@ -142,22 +231,50 @@ if len(thin):
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 5. Baseline check (holdout, no MLflow)
+# MAGIC ## 9. Feature matrix (config-driven)
+# MAGIC
+# MAGIC Play with `feature_matrix.experiments` in `eda_lab.yaml` — each row trains a variant on holdout.
 
 # COMMAND ----------
 
-training_config = load_training_config()
 train_df, test_df = holdout_test_split(
     training_df,
     test_quarters=training_config.splits.holdout_test_quarters,
 )
-baseline_metrics = baseline_holdout_metrics(train_df, test_df)
-print(json.dumps(baseline_metrics, indent=2))
+
+if eda_config.sections.feature_matrix and eda_config.feature_matrix.enabled:
+    feature_matrix = run_feature_matrix(train_df, test_df, eda_config, training_config)
+    display(feature_matrix.sort_values("mae"))
+else:
+    print("Feature matrix disabled in eda_lab.yaml")
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 6. Quick train (log only)
+# MAGIC ## 10. Model selection (quick compare)
+# MAGIC
+# MAGIC Candidates from `eda_lab.yaml` → `model_selection.candidates`.
+
+# COMMAND ----------
+
+if eda_config.sections.model_selection and eda_config.model_selection.enabled:
+    display(run_model_selection(train_df, test_df, eda_config, training_config))
+else:
+    print("Model selection disabled in eda_lab.yaml")
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## 11. Baseline holdout (no MLflow)
+
+# COMMAND ----------
+
+print(json.dumps(baseline_holdout_metrics(train_df, test_df), indent=2))
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## 12. Quick train (log only, lab MLflow)
 
 # COMMAND ----------
 
@@ -188,20 +305,14 @@ print(f"Artifacts: {model_path}")
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 7. Gate drill-down
+# MAGIC ## 13. Gate drill-down
 
 # COMMAND ----------
-
-import tempfile
 
 client = MlflowClient()
 with tempfile.TemporaryDirectory() as tmp:
     gate_path = client.download_artifacts(run_id, "reports/gate_report.json", tmp)
     gate_payload = json.loads(Path(gate_path).read_text())
-
-    from house_price_ml.evaluation.gates import GateResult
-    from house_price_ml.evaluation.metrics import compute_metrics, evaluate_by_segment
-    from house_price_ml.evaluation.segments import price_category
 
     gate_result = GateResult(
         passed=gate_payload.get("passed", False),
@@ -246,14 +357,49 @@ with tempfile.TemporaryDirectory() as tmp:
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 8. Deep experiment (tuning + ablation + SHAP)
+# MAGIC ## 14. Residual analysis
+
+# COMMAND ----------
+
+if eda_config.sections.residual_analysis:
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            holdout_path = client.download_artifacts(run_id, "reports/holdout_predictions.csv", tmp)
+            holdout_df = pd.read_csv(holdout_path)
+        seg_residuals, worst = residual_analysis_report(holdout_df, eda_config)
+        print("Residuals by segment:")
+        display(seg_residuals)
+        print("Worst predictions:")
+        display(worst)
+    except Exception as exc:
+        print(f"Residual analysis skipped: {exc}")
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## 15. SHAP / feature importance
+# MAGIC
+# MAGIC Lightweight SHAP on holdout sample (`eda_lab.yaml` → `shap`). Requires `shap` on cluster.
+
+# COMMAND ----------
+
+if eda_config.sections.shap and eda_config.shap.enabled:
+    shap_table = run_shap_report(train_df, test_df, eda_config, training_config)
+    display(shap_table)
+else:
+    print("SHAP disabled in eda_lab.yaml")
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## 16. Deep experiment (tuning + ablation + SHAP via train job)
 
 # COMMAND ----------
 
 deep_config = training_config_from_job_params(
-    enable_tuning="true",
-    enable_ablation="true",
-    enable_explainability="true",
+    enable_tuning="true" if enable_tuning else "false",
+    enable_ablation="true" if enable_ablation else "false",
+    enable_explainability="true" if enable_explainability else "false",
 )
 
 deep_out = Path("/tmp/lab_deep_output")
@@ -267,38 +413,33 @@ train(
     data_source=f"lab-deep:{data_source}",
     mlflow_experiment_name=mlflow_experiment,
 )
-print("Deep experiment complete (same flags as ml_experiment_pipeline, still no UC register).")
+print("Deep experiment complete (still no UC register).")
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 9. Compare recent runs
+# MAGIC ## 17. Compare recent runs
 
 # COMMAND ----------
 
-runs_df = search_recent_runs(mlflow_experiment, n=10)
-display(runs_df)
+display(search_recent_runs(mlflow_experiment, n=10))
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 10. YAML export checklist
+# MAGIC ## 18. YAML export checklist
 # MAGIC
-# MAGIC Before pushing to `staging` (official `full_ml_pipeline`), commit:
+# MAGIC Before official CI (`git push origin staging`), commit:
 # MAGIC
-# MAGIC - `ml/config/training.yaml` — hyperparams; set `tuning.enabled: false` for prod CI
+# MAGIC - `ml/config/eda_lab.yaml` — EDA playbook + feature matrix experiments
+# MAGIC - `ml/config/training.yaml` — hyperparams; `tuning.enabled: false` for prod CI
 # MAGIC - `ml/config/quality_gates.yaml` — gate thresholds
-# MAGIC - `ml/config/data.yaml` — if synthetic profile / data assumptions changed
-# MAGIC - `ml/src/` — feature or training code changes
-# MAGIC
-# MAGIC After YAML is committed:
+# MAGIC - `ml/config/data.yaml` — if data profile changed
+# MAGIC - `ml/src/` — feature engineering code changes
 # MAGIC
 # MAGIC ```bash
-# MAGIC # Batch experiment (no UC register)
-# MAGIC ./scripts/databricks-ci.sh run-experiment-pipeline staging
-# MAGIC
-# MAGIC # Official candidate (registers UC version when gates pass)
-# MAGIC git push origin staging
+# MAGIC ./scripts/databricks-ci.sh run-experiment-pipeline staging   # batch lab lane
+# MAGIC git push origin staging                                        # official CI
 # MAGIC ```
 
 # COMMAND ----------

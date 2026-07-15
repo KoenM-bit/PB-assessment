@@ -1,0 +1,121 @@
+# EDA & feature-engineering playbook for 00_ml_experiment_lab.py
+# Override: EDA_LAB_CONFIG_PATH env or widget eda_config_path
+
+sections:
+  data_quality: true
+  univariate: true
+  bivariate: true
+  correlation: true
+  business_hypotheses: true
+  feature_matrix: true
+  model_selection: true
+  residual_analysis: true
+  shap: true
+
+data_quality:
+  max_null_rate: 0.10
+  max_reject_rate: 0.05
+  key_columns:
+    - region
+    - property_type
+    - surface_area
+    - label_sale_price
+    - sale_date
+
+univariate:
+  numeric_columns:
+    - surface_area
+    - number_of_rooms
+    - number_of_bedrooms
+    - build_year
+    - label_sale_price
+    - latitude
+    - longitude
+  categorical_columns:
+    - region
+    - property_type
+    - energy_label
+  outlier_iqr_multiplier: 1.5
+  skew_warning_threshold: 1.0
+
+bivariate:
+  numeric_vs_target:
+    - surface_area
+    - number_of_rooms
+    - build_year
+  categorical_vs_target:
+    - region
+    - property_type
+    - energy_label
+  segment_columns:
+    - region
+    - property_type
+
+correlation:
+  method: pearson
+  numeric_columns:
+    - surface_area
+    - number_of_rooms
+    - number_of_bedrooms
+    - build_year
+    - label_sale_price
+    - latitude
+    - longitude
+  high_correlation_threshold: 0.85
+  min_abs_correlation_with_target: 0.05
+
+business_hypotheses:
+  - name: price_increases_with_surface
+    type: correlation
+    x: surface_area
+    y: label_sale_price
+    min_correlation: 0.25
+  - name: more_rooms_higher_price
+    type: correlation
+    x: number_of_rooms
+    y: label_sale_price
+    min_correlation: 0.15
+  - name: detached_premium
+    type: segment_mean_ratio
+    segment_column: property_type
+    segment_value: detached
+    target: label_sale_price
+    min_ratio_vs_overall: 1.05
+  - name: amsterdam_premium
+    type: segment_mean_ratio
+    segment_column: region
+    segment_value: Amsterdam
+    target: label_sale_price
+    min_ratio_vs_overall: 1.10
+
+feature_matrix:
+  enabled: true
+  max_train_rows: 3000
+  model_type: random_forest
+  experiments:
+    - name: full
+      include_groups: [geo, energy, calendar, region_median, interactions]
+    - name: drop_geo
+      include_groups: [energy, calendar, region_median, interactions]
+    - name: drop_energy
+      include_groups: [geo, calendar, region_median, interactions]
+    - name: geo_calendar_only
+      include_groups: [geo, calendar, region_median]
+
+model_selection:
+  enabled: true
+  candidates:
+    - ridge
+    - random_forest
+  max_train_rows: 3000
+
+residual_analysis:
+  segment_columns:
+    - region
+    - property_type
+  top_n_worst: 15
+
+shap:
+  enabled: true
+  max_samples: 200
+  max_features: 15
