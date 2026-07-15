@@ -1,11 +1,10 @@
-"""Shared pytest fixtures for repo-root tests."""
+"""Pytest fixtures for integration tests (offline MLflow)."""
 
 from __future__ import annotations
 
 import os
 
 import pytest
-
 from house_price_ml.config.settings import get_settings
 
 _OFFLINE_ENV_KEYS = ("DATABRICKS_HOST", "DATABRICKS_TOKEN", "MLFLOW_TRACKING_URI")
