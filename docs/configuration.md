@@ -59,8 +59,32 @@ Do not rely on per-context Netlify UI variables for catalog/endpoint on the free
 ### Databricks jobs
 
 - Bundle target (`staging` / `prod`) sets `var.catalog` and `var.model_alias`
-- Passed to notebooks as widgets (`catalog`, `git_commit`)
+- Passed to notebooks as widgets (`catalog`, `git_commit`, experiment flags)
 - Jobs do **not** read Netlify configuration
+
+#### Train job parameters (`04_train_model.py`)
+
+| Parameter | Default (full pipeline) | Experiment pipeline |
+|-----------|-------------------------|---------------------|
+| `enable_tuning` | `false` | `true` |
+| `enable_ablation` | `false` | `true` |
+| `enable_explainability` | `false` | `true` |
+| `register_model` | `true` | `true` |
+
+Jobs:
+
+| Bundle job | Purpose |
+|------------|---------|
+| `full_ml_pipeline` | bronze→gold→train→error_analysis→evaluate (CI default) |
+| `ml_experiment_pipeline` | Same with tuning+ablation+SHAP enabled |
+| `train_model` | Train only (widgets for experiment flags) |
+| `error_analysis` | Residual/segment report from latest passed-gate MLflow run |
+
+Train tasks use serverless env with `optuna` + `shap` PyPI deps. Run experiment pipeline:
+
+```bash
+./scripts/databricks-ci.sh run-experiment-pipeline staging
+```
 
 ### Promotion and deploy scripts
 

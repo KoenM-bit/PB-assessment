@@ -17,6 +17,7 @@ on:
           - bundle-deploy
           - upload-wheel
           - run-pipeline
+          - run-experiment-pipeline
           - deploy-serving
           - deploy-serving-local
           - promote-champion

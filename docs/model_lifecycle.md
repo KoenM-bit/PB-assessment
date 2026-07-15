@@ -31,6 +31,23 @@ flowchart TD
 - **Walk-forward validation** across quarterly splits
 - **Final holdout test set** (last 2 quarters) — never used during iteration
 - No random splits (prevents temporal leakage)
+- **Quality gates** (`ml/config/quality_gates.yaml`) enforced when `register_model=true` (Databricks notebook 04, `make train`)
+
+## Databricks jobs
+
+| Job | Train flags | Notes |
+|-----|-------------|-------|
+| `full_ml_pipeline` | tuning/ablation/SHAP off (fast CI path) | Includes `07_error_analysis` after train |
+| `ml_experiment_pipeline` | all experiment flags on | Optuna + SHAP deps on train task |
+| `train_model` | configurable via job parameters | Standalone retrain on existing gold tables |
+| `error_analysis` | — | Latest `gates_passed=1` run → `gold.error_analysis_summary` |
+
+Pass experiment flags when running manually:
+
+```bash
+databricks bundle run full_ml_pipeline -t staging \
+  --params git_commit=abc123,enable_tuning=true,enable_ablation=true,enable_explainability=true
+```
 
 ## MLflow Logging
 

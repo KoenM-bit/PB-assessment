@@ -1,8 +1,8 @@
 {
   "model_type": "random_forest",
   "feature_pipeline_version": "1.0.0",
-  "training_date": "2026-07-15T18:06:50.790479+00:00",
-  "git_commit": "148be32dbb4a30ddc4b4b528fe685e965d7cdd2b",
+  "training_date": "2026-07-15T18:46:18.924168+00:00",
+  "git_commit": "09d4620ddc7a328f6ce25850c3ce67d6956357fc",
   "training_data_rows": 455,
   "test_rows": 45,
   "validation_approach": "walk_forward + holdout_test",
@@ -128,11 +128,11 @@
   "global_median_psm": 3826.5180636335504,
   "holdout_evaluation": {
     "model": {
-      "mae": 36242.55134845048,
+      "mae": 36242.551348450485,
       "rmse": 44211.258715427626,
-      "bias": 1876.4599557097465,
-      "mape": 8.488263704714939,
-      "mdape": 6.731638440887294,
+      "bias": 1876.4599557097542,
+      "mape": 8.48826370471494,
+      "mdape": 6.731638440887274,
       "pct_within_10pct": 0.7111111111111111,
       "sample_size": 45
     },
@@ -149,7 +149,7 @@
     "mae_improvement_pct": 10.3
   },
   "walk_forward_baseline_mae_mean": 43338.17275862855,
-  "walk_forward_model_mae_mean": 44309.35768388489,
+  "walk_forward_model_mae_mean": 44309.357683884904,
   "gates_passed": true,
   "gate_failures": []
 }

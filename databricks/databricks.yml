@@ -22,6 +22,37 @@ variables:
     description: Workspace path to house_price_ml wheel (built by bundle deploy)
     default: ${workspace.root_path}/artifacts/.internal/house_price_ml-0.1.0-py3-none-any.whl
 
+# Shared job parameters for train notebooks (04_train_model.py).
+x-train-job-parameters: &train_job_parameters
+  - name: git_commit
+    default: ""
+  - name: enable_tuning
+    default: "false"
+  - name: enable_ablation
+    default: "false"
+  - name: enable_explainability
+    default: "false"
+  - name: register_model
+    default: "true"
+
+x-train-base-parameters: &train_base_parameters
+  catalog: ${var.catalog}
+  git_commit: "{{job.parameters.git_commit}}"
+  wheel_path: ${var.ml_wheel_path}
+  enable_tuning: "{{job.parameters.enable_tuning}}"
+  enable_ablation: "{{job.parameters.enable_ablation}}"
+  enable_explainability: "{{job.parameters.enable_explainability}}"
+  register_model: "{{job.parameters.register_model}}"
+
+x-train-ml-environment: &train_ml_environment
+  environment_key: serverless_ml
+  spec:
+    client: "2"
+    dependencies:
+      - ${var.ml_wheel_path}
+      - optuna>=3.5
+      - shap>=0.44
+
 # Workspace host: set DATABRICKS_HOST in the environment (or use `databricks auth login`).
 # Databricks bundles do not allow ${var.*} interpolation on workspace.host.
 
@@ -96,24 +127,21 @@ resources:
 
     train_model:
       name: "[${bundle.target}] Train Model"
-      parameters:
-        - name: git_commit
-          default: ""
+      parameters: *train_job_parameters
       environments:
         - environment_key: serverless
           spec:
             client: "2"
             dependencies:
               - ${var.ml_wheel_path}
+        - *train_ml_environment
       tasks:
         - task_key: train
-          environment_key: serverless
+          environment_key: serverless_ml
           notebook_task:
             notebook_path: ./notebooks/04_train_model.py
             base_parameters:
-              catalog: ${var.catalog}
-              git_commit: "{{job.parameters.git_commit}}"
-              wheel_path: ${var.ml_wheel_path}
+              <<: *train_base_parameters
 
     evaluate_model:
       name: "[${bundle.target}] Evaluate Model"
@@ -157,15 +185,14 @@ resources:
 
     full_ml_pipeline:
       name: "[${bundle.target}] Full ML Pipeline"
-      parameters:
-        - name: git_commit
-          default: ""
+      parameters: *train_job_parameters
       environments:
         - environment_key: serverless
           spec:
             client: "2"
             dependencies:
               - ${var.ml_wheel_path}
+        - *train_ml_environment
       tasks:
         - task_key: bronze
           environment_key: serverless
@@ -197,12 +224,19 @@ resources:
         - task_key: train
           depends_on:
             - task_key: gold
-          environment_key: serverless
+          environment_key: serverless_ml
           notebook_task:
             notebook_path: ./notebooks/04_train_model.py
             base_parameters:
+              <<: *train_base_parameters
+        - task_key: error_analysis
+          depends_on:
+            - task_key: train
+          environment_key: serverless_ml
+          notebook_task:
+            notebook_path: ./notebooks/07_error_analysis.py
+            base_parameters:
               catalog: ${var.catalog}
-              git_commit: "{{job.parameters.git_commit}}"
               wheel_path: ${var.ml_wheel_path}
         - task_key: evaluate
           depends_on:
@@ -210,6 +244,89 @@ resources:
           environment_key: serverless
           notebook_task:
             notebook_path: ./notebooks/05_evaluate_model.py
+            base_parameters:
+              catalog: ${var.catalog}
+              wheel_path: ${var.ml_wheel_path}
+
+    ml_experiment_pipeline:
+      name: "[${bundle.target}] ML Experiment Pipeline"
+      parameters:
+        - name: git_commit
+          default: ""
+        - name: enable_tuning
+          default: "true"
+        - name: enable_ablation
+          default: "true"
+        - name: enable_explainability
+          default: "true"
+        - name: register_model
+          default: "true"
+      environments:
+        - environment_key: serverless
+          spec:
+            client: "2"
+            dependencies:
+              - ${var.ml_wheel_path}
+        - *train_ml_environment
+      tasks:
+        - task_key: bronze
+          environment_key: serverless
+          notebook_task:
+            notebook_path: ./notebooks/01_bronze_ingest.py
+            base_parameters:
+              catalog: ${var.catalog}
+              wheel_path: ${var.ml_wheel_path}
+              profile: engineering
+              rows: "10000"
+        - task_key: silver
+          depends_on:
+            - task_key: bronze
+          environment_key: serverless
+          notebook_task:
+            notebook_path: ./notebooks/02_silver_clean.py
+            base_parameters:
+              catalog: ${var.catalog}
+              wheel_path: ${var.ml_wheel_path}
+        - task_key: gold
+          depends_on:
+            - task_key: silver
+          environment_key: serverless
+          notebook_task:
+            notebook_path: ./notebooks/03_gold_features.py
+            base_parameters:
+              catalog: ${var.catalog}
+              wheel_path: ${var.ml_wheel_path}
+        - task_key: train
+          depends_on:
+            - task_key: gold
+          environment_key: serverless_ml
+          notebook_task:
+            notebook_path: ./notebooks/04_train_model.py
+            base_parameters:
+              <<: *train_base_parameters
+        - task_key: error_analysis
+          depends_on:
+            - task_key: train
+          environment_key: serverless_ml
+          notebook_task:
+            notebook_path: ./notebooks/07_error_analysis.py
+            base_parameters:
+              catalog: ${var.catalog}
+              wheel_path: ${var.ml_wheel_path}
+
+    error_analysis:
+      name: "[${bundle.target}] Error Analysis"
+      environments:
+        - environment_key: serverless
+          spec:
+            client: "2"
+            dependencies:
+              - ${var.ml_wheel_path}
+      tasks:
+        - task_key: analyze
+          environment_key: serverless
+          notebook_task:
+            notebook_path: ./notebooks/07_error_analysis.py
             base_parameters:
               catalog: ${var.catalog}
               wheel_path: ${var.ml_wheel_path}

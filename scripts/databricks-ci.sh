@@ -62,6 +62,12 @@ case "$COMMAND" in
     echo "==> Run full ML pipeline (target=${BTARGET}, git_commit=${GIT_SHA:-<none>})"
     (cd "$ROOT/databricks" && databricks bundle run full_ml_pipeline -t "$BTARGET" --params "git_commit=${GIT_SHA}")
     ;;
+  run-experiment-pipeline)
+    require_token
+    GIT_SHA="${GITHUB_SHA:-$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || echo "")}"
+    echo "==> Run ML experiment pipeline (target=${BTARGET}, git_commit=${GIT_SHA:-<none>})"
+    (cd "$ROOT/databricks" && databricks bundle run ml_experiment_pipeline -t "$BTARGET" --params "git_commit=${GIT_SHA}")
+    ;;
   deploy-serving)
     require_token
     export FROM_REGISTRY=true
@@ -126,6 +132,7 @@ case "$COMMAND" in
     echo "  bundle-deploy          Deploy Databricks Asset Bundle jobs" >&2
     echo "  upload-wheel           Build + upload house_price_ml wheel to workspace" >&2
     echo "  run-pipeline           Run bronze→silver→gold→train→evaluate job" >&2
+    echo "  run-experiment-pipeline Run full pipeline with tuning+ablation+SHAP enabled" >&2
     echo "  deploy-serving         Point serving endpoint at registry alias (no local train)" >&2
     echo "  deploy-serving-local   Train locally, register, deploy (legacy laptop flow)" >&2
     echo "  promote-champion       Move challenger alias to champion (same catalog)" >&2

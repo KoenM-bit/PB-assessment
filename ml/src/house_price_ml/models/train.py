@@ -147,6 +147,49 @@ def _log_json_artifact(payload: dict | list, filename: str) -> None:
         Path(temp_path).unlink(missing_ok=True)
 
 
+def _print_gate_diagnostics(gate_result) -> None:
+    """Emit gate failures to job logs (visible even if later artifact upload is interrupted)."""
+    if gate_result.passed:
+        print("Quality gates: PASSED")
+        return
+    print("Quality gates: FAILED")
+    for failure in gate_result.failures:
+        print(f"  - {failure}")
+    for key, violations in gate_result.details.items():
+        if not key.endswith("_violations") or not violations:
+            continue
+        print(f"  {key}:")
+        for row in violations:
+            print(
+                f"    {row.get('segment')}: mae={row.get('mae'):.0f} "
+                f"ratio_vs_overall={row.get('ratio_vs_overall')} "
+                f"n={row.get('sample_size')}"
+            )
+
+
+def _log_gate_evaluation_artifacts(
+    *,
+    summary: dict,
+    gate_result,
+    segment_region,
+    segment_property,
+    segment_price,
+    holdout: pd.DataFrame,
+    out: Path,
+) -> None:
+    """Log gate diagnostics first so failed runs still have audit artifacts in MLflow."""
+    (out / "training_summary.json").write_text(json.dumps(summary, indent=2))
+    _log_json_artifact(summary, "training_summary.json")
+    _log_json_artifact(gate_result.to_dict(), "gate_report.json")
+    _log_json_artifact(segment_region.to_dict(orient="records"), "metrics_by_region.json")
+    _log_json_artifact(segment_property.to_dict(orient="records"), "metrics_by_property_type.json")
+    _log_json_artifact(segment_price.to_dict(orient="records"), "metrics_by_price_category.json")
+    holdout_path = out / "holdout_predictions.csv"
+    holdout.to_csv(holdout_path, index=False)
+    mlflow.log_artifact(str(holdout_path), artifact_path="reports")
+    _print_gate_diagnostics(gate_result)
+
+
 def _log_training_config_artifact(config: TrainingConfig) -> None:
     """Log resolved training config (post CLI overrides) as YAML."""
     with tempfile.TemporaryDirectory() as tmp_dir:
@@ -405,11 +448,20 @@ def train(
                 1.0 if np.mean(wf_model_maes) < np.mean(wf_baseline_maes) else 0.0,
             )
 
+        # Log gate diagnostics before heavy model packaging (failed runs may exit early).
+        _log_gate_evaluation_artifacts(
+            summary=summary,
+            gate_result=gate_result,
+            segment_region=segment_region,
+            segment_property=segment_property,
+            segment_price=segment_price,
+            holdout=holdout,
+            out=out,
+        )
+
         model_path = out / "mlflow_model"
         save_model_artifact(pipeline, baseline, metadata, str(model_path))
         mlflow.log_artifacts(str(model_path), artifact_path="model")
-
-        (out / "training_summary.json").write_text(json.dumps(summary, indent=2))
 
         manifest = None
         if gate_result.passed:
@@ -431,14 +483,7 @@ def train(
                 manifest=manifest,
             )
 
-        _log_json_artifact(summary, "training_summary.json")
-        _log_json_artifact(gate_result.to_dict(), "gate_report.json")
-        if manifest:
-            _log_json_artifact(manifest, "training_manifest.json")
         _log_json_artifact(metadata, "model_metadata.json")
-        _log_json_artifact(segment_region.to_dict(orient="records"), "metrics_by_region.json")
-        _log_json_artifact(segment_property.to_dict(orient="records"), "metrics_by_property_type.json")
-        _log_json_artifact(segment_price.to_dict(orient="records"), "metrics_by_price_category.json")
 
         ablation_report: list[dict] | None = None
         if config.ablation.enabled:
@@ -474,13 +519,12 @@ def train(
         (out / "model_card.json").write_text(json.dumps(model_card, indent=2))
         _log_json_artifact(model_card, "model_card.json")
 
+        if manifest:
+            _log_json_artifact(manifest, "training_manifest.json")
+
         importance = _feature_importance(pipeline, feature_names)
         if importance:
             _log_json_artifact(importance, "feature_importance.json")
-
-        holdout_path = out / "holdout_predictions.csv"
-        holdout.to_csv(holdout_path, index=False)
-        mlflow.log_artifact(str(holdout_path), artifact_path="reports")
 
         registered_version = None
         if register_model and (gate_result.passed or not should_enforce_gates):
