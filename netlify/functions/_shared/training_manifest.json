@@ -1,8 +1,8 @@
 {
   "model_type": "random_forest",
   "feature_pipeline_version": "1.0.0",
-  "training_date": "2026-07-15T15:27:55.636526+00:00",
-  "git_commit": "89067b65b6c86d004f191c5e89f39a9b0648278a",
+  "training_date": "2026-07-15T15:57:24.988977+00:00",
+  "git_commit": "4b304581cb47c5e258e9ef6bdb1b3bd9f1454327",
   "training_data_rows": 470,
   "test_rows": 30,
   "validation_approach": "walk_forward + holdout_test",
@@ -128,10 +128,10 @@
   "global_median_psm": 3899.7891907403487,
   "holdout_evaluation": {
     "model": {
-      "mae": 48101.10126315911,
-      "rmse": 55877.91569608021,
-      "bias": -9345.584682683817,
-      "mape": 11.030354320957663,
+      "mae": 48101.10126315908,
+      "rmse": 55877.9156960802,
+      "bias": -9345.584682683844,
+      "mape": 11.030354320957661,
       "sample_size": 30
     },
     "baseline": {
@@ -145,5 +145,5 @@
     "mae_improvement_pct": -8.5
   },
   "walk_forward_baseline_mae_mean": 44891.74758299575,
-  "walk_forward_model_mae_mean": 46563.58105584773
+  "walk_forward_model_mae_mean": 46563.581055847724
 }

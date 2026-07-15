@@ -14,11 +14,15 @@ import mlflow
 import numpy as np
 import pandas as pd
 from mlflow import MlflowClient
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.linear_model import Ridge
+from sklearn.base import BaseEstimator
 
 from house_price_ml.config.mlflow_tracking import configure_mlflow
 from house_price_ml.config.settings import Settings, get_settings
+from house_price_ml.config.training_config import (
+    TrainingConfig,
+    load_training_config,
+    resolve_training_config_path,
+)
 from house_price_ml.data.training_data import (
     TrainingDataSource,
     load_export_metadata,
@@ -75,15 +79,8 @@ def _resolve_register_model(register_model: bool | None, settings: Settings) -> 
     return False
 
 
-def _make_estimator(model_type: str):
-    if model_type == "ridge":
-        return Ridge(alpha=1.0)
-    return RandomForestRegressor(
-        n_estimators=200,
-        random_state=42,
-        n_jobs=-1,
-        max_depth=12,
-    )
+def _make_estimator(config: TrainingConfig) -> BaseEstimator:
+    return config.make_estimator()
 
 
 def _region_medians_dict_from_df(df: pd.DataFrame) -> dict[tuple[str, str], float]:
@@ -94,13 +91,13 @@ def _region_medians_dict_from_df(df: pd.DataFrame) -> dict[tuple[str, str], floa
 
 def _walk_forward_model_maes(
     splits: list[tuple[pd.DataFrame, pd.DataFrame]],
-    model_type: str,
+    config: TrainingConfig,
 ) -> list[float]:
     maes: list[float] = []
     for train_fold, val_fold in splits:
         # Recompute region medians from the fold train slice only (no future leakage).
         fold_medians = _region_medians_dict_from_df(train_fold)
-        fold_pipeline = build_sklearn_pipeline(_make_estimator(model_type))
+        fold_pipeline = build_sklearn_pipeline(_make_estimator(config))
         X_tr = raw_to_feature_frame(train_fold.to_dict("records"), fold_medians)
         y_tr = train_fold["label_sale_price"].values.astype(float)
         fold_pipeline.fit(X_tr, y_tr)
@@ -163,9 +160,11 @@ def _register_model(
 
 def train(
     data: TrainingDataSource,
-    model_type: str = "random_forest",
+    model_type: str | None = None,
     output_dir: Path | None = None,
     *,
+    training_config: TrainingConfig | None = None,
+    config_path: Path | str | None = None,
     catalog: str | None = None,
     register_model: bool | None = None,
     register_alias: str | None = None,
@@ -173,6 +172,11 @@ def train(
     data_source: str | None = None,
 ) -> Path:
     settings = get_settings()
+    resolved_config_path = resolve_training_config_path(config_path)
+    config = training_config or load_training_config(resolved_config_path)
+    if model_type is not None:
+        config = config.model_copy(update={"model_type": model_type})  # type: ignore[arg-type]
+    resolved_model_type = config.model_type
     log_catalog = catalog or settings.databricks_catalog
     register_model = _resolve_register_model(register_model, settings)
     resolved_git_commit = _git_commit(git_commit)
@@ -187,8 +191,15 @@ def train(
         if export_meta is not None:
             rejected_rows = int(export_meta.get("rejected_rows", 0))
 
-    train_df, test_df = holdout_test_split(training_frame)
-    splits = walk_forward_splits(train_df)
+    train_df, test_df = holdout_test_split(
+        training_frame,
+        test_quarters=config.splits.holdout_test_quarters,
+    )
+    splits = walk_forward_splits(
+        train_df,
+        n_splits=config.splits.walk_forward_folds,
+        test_size_quarters=config.splits.walk_forward_test_quarters,
+    )
 
     baseline = BusinessBaseline().fit(train_df)
     y_train = train_df["label_sale_price"].values.astype(float)
@@ -199,7 +210,7 @@ def train(
         for p in train_df["property_type"].unique()
     }
 
-    pipeline = build_sklearn_pipeline(_make_estimator(model_type))
+    pipeline = build_sklearn_pipeline(_make_estimator(config))
 
     region_medians_dict = _region_medians_dict_from_df(train_df)
     X_train = raw_to_feature_frame(train_df.to_dict("records"), region_medians_dict)
@@ -212,7 +223,7 @@ def train(
         y_v = val["label_sale_price"].values.astype(float)
         wf_baseline_maes.append(compute_metrics(y_v, bl.predict(val))["mae"])
 
-    wf_model_maes = _walk_forward_model_maes(splits, model_type)
+    wf_model_maes = _walk_forward_model_maes(splits, config)
 
     X_test = raw_to_feature_frame(test_df.to_dict("records"), region_medians_dict)
     y_test = test_df["label_sale_price"].values.astype(float)
@@ -243,7 +254,8 @@ def train(
         "feature_pipeline_version": settings.feature_pipeline_version,
         "feature_bounds": get_training_feature_bounds(train_df, region_medians_dict),
         "region_medians": region_medians,
-        "model_type": model_type,
+        "model_type": resolved_model_type,
+        "training_config_path": str(resolved_config_path),
         "training_date": datetime.now(timezone.utc).isoformat(),
         "git_commit": resolved_git_commit,
         "training_data_rows": len(train_df),
@@ -253,21 +265,24 @@ def train(
         "catalog": log_catalog,
     }
 
-    run_name = f"train_{model_type}_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}"
+    run_name = f"train_{resolved_model_type}_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}"
     with mlflow.start_run(run_name=run_name):
         mlflow.set_tags(
             {
                 "app_env": settings.app_env,
-                "model_type": model_type,
+                "model_type": resolved_model_type,
                 "git_commit": resolved_git_commit,
                 "training_source": _training_source(),
                 "beats_baseline": str(beats_baseline),
                 "data_source": resolved_data_source,
+                "training_config_path": str(resolved_config_path),
             }
         )
         mlflow.log_params(
             {
-                "model_type": model_type,
+                "model_type": resolved_model_type,
+                "training_config_path": str(resolved_config_path),
+                **config.mlflow_params(),
                 "feature_pipeline_version": settings.feature_pipeline_version,
                 "git_commit": resolved_git_commit,
                 "training_rows": len(train_df),
@@ -313,7 +328,7 @@ def train(
         (out / "training_summary.json").write_text(json.dumps(summary, indent=2))
 
         manifest = _build_training_manifest(
-            model_type=model_type,
+            model_type=resolved_model_type,
             metadata=metadata,
             train_df=train_df,
             test_df=test_df,
@@ -423,7 +438,18 @@ def _write_training_manifest(manifest_dir: Path, manifest: dict) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--data", type=Path, required=True)
-    parser.add_argument("--model-type", choices=["ridge", "random_forest"], default="random_forest")
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=None,
+        help="Training YAML config (default: ml/config/training.yaml)",
+    )
+    parser.add_argument(
+        "--model-type",
+        choices=["ridge", "random_forest"],
+        default=None,
+        help="Override model_type from training config",
+    )
     parser.add_argument("--output", type=Path, default=Path("artifacts/model"))
     parser.add_argument("--catalog", default=None, help="Unity Catalog name (logging only)")
     parser.add_argument(
@@ -452,6 +478,7 @@ def main() -> None:
         args.data,
         args.model_type,
         args.output,
+        config_path=args.config,
         catalog=args.catalog or settings.databricks_catalog,
         register_model=register_model,
         register_alias=args.register_alias,

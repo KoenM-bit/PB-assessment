@@ -21,8 +21,7 @@ training_df = assemble_training_frame(silver_df, gold_df)
 out = Path("/tmp/model_output")
 train(
     training_df,
-    "random_forest",
-    out,
+    output_dir=out,
     catalog=catalog,
     register_model=True,
     git_commit=widget_commit if widget_commit not in ("unknown", "none", "") else None,

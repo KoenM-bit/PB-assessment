@@ -143,3 +143,17 @@ These are intentional: local scripts fail fast; deployed API allows more headroo
 - [deployment.md](deployment.md) — deploy and rollback procedures
 - [enterprise-workflow.md](enterprise-workflow.md) — daily development and promotion flow
 - [data_model.md](data_model.md) — training data path (`gold.training_frame`)
+
+---
+
+## Training pipeline config (YAML)
+
+Model hyperparameters and split settings live in **[`ml/config/training.yaml`](../ml/config/training.yaml)** — not in Python code.
+
+| Override | How |
+|----------|-----|
+| Default | `ml/config/training.yaml` |
+| Custom file | `TRAINING_CONFIG_PATH` env or `train --config <path>` |
+| Quick experiment | `train --model-type ridge` (overrides YAML `model_type` only) |
+
+The file is bundled into the ML wheel for Databricks jobs. MLflow logs `training_config_path` and hyperparameters from the resolved config.

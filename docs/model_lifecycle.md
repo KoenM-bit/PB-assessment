@@ -10,6 +10,8 @@
 
 ## Training Pipeline
 
+Hyperparameters and validation splits are defined in [`ml/config/training.yaml`](../ml/config/training.yaml). `train.py` loads this file by default (override with `--config` or `TRAINING_CONFIG_PATH`).
+
 ```mermaid
 flowchart TD
   Data[Gold_Features] --> Split[Walk_Forward_Split]
