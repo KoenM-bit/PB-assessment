@@ -1,5 +1,7 @@
 # Deployment
 
+See [configuration.md](configuration.md) for the full environment matrix and precedence rules.
+
 ## Environments
 
 | Variable | Local | Staging | Production |
@@ -8,6 +10,8 @@
 | `DATABRICKS_CATALOG` | house_price_staging | house_price_staging | house_price_prod |
 | `MODEL_ALIAS` | challenger | challenger | champion |
 | `USE_MOCK_DATABRICKS` | true | false | false |
+
+**Source of truth:** deployed Netlify apps use hardcoded catalog/endpoint/alias in `config.ts` (see [configuration.md](configuration.md)).
 
 ## Netlify Deployment
 
@@ -33,10 +37,7 @@ Staging vs production **endpoint and catalog** are chosen automatically:
 - `netlify.toml` sets `APP_ENV` per branch/context
 - `netlify/functions/_shared/config.ts` maps `APP_ENV` → serving endpoint + catalog
 
-| `APP_ENV` | Endpoint | Catalog | Alias |
-|-----------|----------|---------|-------|
-| staging | `house-price-serving` | `house_price_staging` | challenger |
-| production | `house-price-serving-prod` | `house_price_prod` | champion |
+Details: [configuration.md](configuration.md).
 
 ## Databricks Deployment
 
@@ -112,6 +113,7 @@ before falling back to the business baseline.
 cp .env.example .env
 make install
 make seed
+make gold-export
 make train
 make dev-full   # Netlify dev with functions
 ```

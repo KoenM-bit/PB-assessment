@@ -19,10 +19,13 @@ from sklearn.linear_model import Ridge
 
 from house_price_ml.config.mlflow_tracking import configure_mlflow
 from house_price_ml.config.settings import Settings, get_settings
-from house_price_ml.data.silver import bronze_to_silver
+from house_price_ml.data.training_data import (
+    TrainingDataSource,
+    load_export_metadata,
+    load_training_frame,
+)
 from house_price_ml.evaluation.metrics import compute_metrics, evaluate_by_segment
 from house_price_ml.evaluation.splits import holdout_test_split, walk_forward_splits
-from house_price_ml.features.aggregates import silver_to_gold_features
 from house_price_ml.features.pipeline import get_training_feature_bounds, raw_to_feature_frame
 from house_price_ml.models.baseline import BusinessBaseline
 from house_price_ml.serving.mlflow_model import build_sklearn_pipeline, save_model_artifact
@@ -57,6 +60,19 @@ def _can_register_to_uc(settings: Settings) -> bool:
     if os.environ.get("DATABRICKS_RUNTIME_VERSION"):
         return True
     return bool(settings.databricks_host and settings.databricks_token)
+
+
+def _resolve_register_model(register_model: bool | None, settings: Settings) -> bool:
+    """Default False — only register when explicitly opted in (pipeline / make train --register)."""
+    if register_model is False:
+        return False
+    if not _can_register_to_uc(settings):
+        return False
+    if register_model is True:
+        return True
+    if os.environ.get("REGISTER_UC_MODEL", "").strip().lower() in {"1", "true", "yes"}:
+        return True
+    return False
 
 
 def _make_estimator(model_type: str):
@@ -146,7 +162,7 @@ def _register_model(
 
 
 def train(
-    data_path: Path,
+    data: TrainingDataSource,
     model_type: str = "random_forest",
     output_dir: Path | None = None,
     *,
@@ -158,22 +174,20 @@ def train(
 ) -> Path:
     settings = get_settings()
     log_catalog = catalog or settings.databricks_catalog
-    if register_model is None:
-        register_model = _can_register_to_uc(settings)
+    register_model = _resolve_register_model(register_model, settings)
     resolved_git_commit = _git_commit(git_commit)
-    resolved_data_source = data_source or str(data_path)
+    data_path_str = str(data) if isinstance(data, Path) else "dataframe"
+    resolved_data_source = data_source or data_path_str
     tracking_uri = configure_mlflow(settings)
 
-    ## todo: we bouwen hier de dataset weer opnieuw op, terwijl die al gemaakt is. Dat is dubbel en onnodig.
-    # Gold before split is intentional: region_median_price_per_sqm is point-in-time
-    # (sale_date < snapshot per row). Row-wise features are also split-safe.
-    # Training uses raw_to_feature_frame + static train-only region medians (serving
-    # contract), not gold["region_median_price_per_sqm"] — see aggregates.py docstrings.
-    raw = pd.read_csv(data_path, parse_dates=["listing_timestamp", "sale_date"])
-    clean, rejected = bronze_to_silver(raw)
-    gold = silver_to_gold_features(clean)
+    training_frame = load_training_frame(data)
+    rejected_rows = 0
+    if isinstance(data, Path):
+        export_meta = load_export_metadata(data)
+        if export_meta is not None:
+            rejected_rows = int(export_meta.get("rejected_rows", 0))
 
-    train_df, test_df = holdout_test_split(gold)
+    train_df, test_df = holdout_test_split(training_frame)
     splits = walk_forward_splits(train_df)
 
     baseline = BusinessBaseline().fit(train_df)
@@ -258,14 +272,14 @@ def train(
                 "git_commit": resolved_git_commit,
                 "training_rows": len(train_df),
                 "test_rows": len(test_df),
-                "rejected_rows": len(rejected),
+                "rejected_rows": rejected_rows,
                 "walk_forward_folds": len(splits),
                 "feature_count": len(feature_names),
                 "region_count": train_df["region"].nunique(),
                 "property_type_count": train_df["property_type"].nunique(),
                 "app_env": settings.app_env,
                 "catalog": log_catalog,
-                "data_path": str(data_path),
+                "data_path": data_path_str,
             }
         )
 
@@ -418,20 +432,28 @@ def main() -> None:
         help="Also set this UC alias (e.g. challenger). Default: register version only.",
     )
     parser.add_argument(
+        "--register",
+        action="store_true",
+        help="Register model version to Unity Catalog (off by default; pipeline uses this).",
+    )
+    parser.add_argument(
         "--no-register",
         action="store_true",
-        help="Skip Unity Catalog registration (experiment logging only).",
+        help="Skip Unity Catalog registration (default without --register).",
     )
     parser.add_argument("--git-commit", default=None, help="Git SHA for experiment tags")
     parser.add_argument("--data-source", default=None, help="Human-readable data source label")
     args = parser.parse_args()
     settings = get_settings()
+    if args.no_register and args.register:
+        parser.error("Use only one of --register or --no-register")
+    register_model = True if args.register else False if args.no_register else None
     path = train(
         args.data,
         args.model_type,
         args.output,
         catalog=args.catalog or settings.databricks_catalog,
-        register_model=False if args.no_register else None,
+        register_model=register_model,
         register_alias=args.register_alias,
         git_commit=args.git_commit,
         data_source=args.data_source,

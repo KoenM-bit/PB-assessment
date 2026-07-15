@@ -7,6 +7,7 @@ import pandas as pd
 import pytest
 
 from house_price_ml.data.synthetic import generate_listings
+from house_price_ml.data.training_data import build_training_export
 from house_price_ml.models.baseline import BusinessBaseline
 from house_price_ml.models.train import train
 from house_price_ml.serving.pyfunc_model import HousePriceModel  # noqa: F401 â€” tests
@@ -14,11 +15,13 @@ from house_price_ml.serving.pyfunc_model import HousePriceModel  # noqa: F401 â€
 
 @pytest.fixture(scope="module")
 def trained_model(tmp_path_factory):
-    data_path = tmp_path_factory.mktemp("data") / "listings.csv"
-    df = generate_listings(500, seed=42)
-    df.to_csv(data_path, index=False)
+    data_dir = tmp_path_factory.mktemp("data")
+    bronze_path = data_dir / "listings.csv"
+    generate_listings(500, seed=42).to_csv(bronze_path, index=False)
+    export_path = data_dir / "training_frame.parquet"
+    build_training_export(bronze_path, export_path)
     out = tmp_path_factory.mktemp("model")
-    train(data_path, "random_forest", out)
+    train(export_path, "random_forest", out)
     return out / "mlflow_model"
 
 

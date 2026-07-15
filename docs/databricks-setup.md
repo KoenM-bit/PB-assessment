@@ -74,6 +74,7 @@ make databricks-init-catalog CATALOG=house_price_staging
 
 ```bash
 make seed
+make gold-export
 make train
 # Artifact at ml/artifacts/model/mlflow_model
 ```
@@ -102,7 +103,7 @@ make train
 **Option A — automated (recommended for demo)**
 
 ```bash
-make train              # if not already done
+make gold-export && make train   # if not already done
 make deploy-serving     # registers model + creates endpoint + waits for READY
 make verify-databricks  # all 3 checks should pass
 ```

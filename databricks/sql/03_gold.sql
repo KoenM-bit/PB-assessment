@@ -16,6 +16,11 @@ CREATE TABLE IF NOT EXISTS ${catalog}.gold.listing_features (
 )
 USING DELTA;
 
+CREATE OR REPLACE VIEW ${catalog}.gold.training_frame AS
+SELECT s.*, g.feature_snapshot_date, g.label_sale_price
+FROM ${catalog}.silver.listings_clean s
+JOIN ${catalog}.gold.listing_features g USING (listing_id);
+
 CREATE TABLE IF NOT EXISTS ${catalog}.gold.predictions (
     prediction_id STRING NOT NULL,
     listing_id STRING,

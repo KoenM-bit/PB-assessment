@@ -7,16 +7,21 @@ import pytest
 
 from house_price_ml.models.train import train
 
-GOLDEN_DATA = Path(__file__).resolve().parents[3] / "data" / "sample" / "listings.csv"
+GOLDEN_EXPORT = Path(__file__).resolve().parents[3] / "data" / "sample" / "training_frame.parquet"
+GOLDEN_BRONZE = Path(__file__).resolve().parents[3] / "data" / "sample" / "listings.csv"
 CHAMPION_MAE_THRESHOLD = 1.10  # candidate MAE must be within 110% of baseline
 
 
 @pytest.fixture(scope="module")
 def training_summary(tmp_path_factory):
-    if not GOLDEN_DATA.exists():
-        pytest.skip("Golden dataset not found — run make seed")
+    if not GOLDEN_EXPORT.is_file():
+        if not GOLDEN_BRONZE.is_file():
+            pytest.skip("Golden dataset not found — run make seed && make gold-export")
+        from house_price_ml.data.training_data import build_training_export
+
+        build_training_export(GOLDEN_BRONZE, GOLDEN_EXPORT)
     out = tmp_path_factory.mktemp("model")
-    train(GOLDEN_DATA, "random_forest", out)
+    train(GOLDEN_EXPORT, "random_forest", out)
     return json.loads((out / "training_summary.json").read_text())
 
 

@@ -18,8 +18,9 @@ class BusinessBaseline:
         self.global_median_psm: float = 3000.0
 
     def fit(self, df: pd.DataFrame) -> "BusinessBaseline":
-        valid = df[(df["sale_price"].notna()) & (df["surface_area"] > 0)].copy()
-        valid["psm"] = valid["sale_price"] / valid["surface_area"]
+        price_col = "label_sale_price" if "label_sale_price" in df.columns else "sale_price"
+        valid = df[(df[price_col].notna()) & (df["surface_area"] > 0)].copy()
+        valid["psm"] = valid[price_col] / valid["surface_area"]
         self.global_median_psm = float(valid["psm"].median()) if len(valid) else 3000.0
         grouped = valid.groupby(["region", "property_type"])["psm"].median()
         self.lookup = {f"{r}|{p}": float(v) for (r, p), v in grouped.items()}

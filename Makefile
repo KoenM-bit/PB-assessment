@@ -1,4 +1,4 @@
-.PHONY: install install-ml install-web dev test test-ml test-web lint lint-ml lint-web seed train promote-challenger clean
+.PHONY: install install-ml install-web dev test test-ml test-web lint lint-ml lint-web seed gold-export train promote-challenger clean
 .PHONY: verify-databricks databricks-init-catalog databricks-init-prod verify-inference verify-inference-prod
 .PHONY: deploy-serving deploy-serving-staging deploy-serving-prod promote-champion promote-to-production bootstrap-production
 .PHONY: deploy-netlify deploy-netlify-prod netlify-build
@@ -53,9 +53,13 @@ lint-web:
 seed:
 	cd ml && python -m house_price_ml.data.synthetic --output ../data/sample/listings.csv --rows 500
 
-train:
+gold-export:
+	chmod +x scripts/build-training-export.py
+	python scripts/build-training-export.py
+
+train: gold-export
 	@echo "Experiment + UC version (no @challenger). Go live: make promote-challenger RUN_ID=<id>"
-	cd ml && python -m house_price_ml.models.train --data ../data/sample/listings.csv
+	cd ml && python -m house_price_ml.models.train --data ../data/sample/training_frame.parquet --register
 
 promote-challenger:
 	@test -n "$(RUN_ID)" || (echo "Usage: make promote-challenger RUN_ID=<mlflow-run-id>"; exit 1)

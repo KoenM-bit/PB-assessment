@@ -7,6 +7,8 @@ flowchart LR
   Source[Synthetic_CSV] --> Bronze
   Bronze --> Silver
   Silver --> GoldFeatures[gold.listing_features]
+  Silver --> TrainingFrame[gold.training_frame]
+  GoldFeatures --> TrainingFrame
   Silver --> Rejected[silver.listings_rejected]
   API[Netlify_API] --> GoldPreds[gold.predictions]
   API --> GoldActuals[gold.actual_sales]
@@ -71,6 +73,20 @@ because target-derived fields are point-in-time (each row only sees sales with
 **Note:** `train.py` fits a separate static region-median lookup on the train split
 for model serving (see `BusinessBaseline` / `raw_to_feature_frame`). That path is
 independent of the gold column above.
+
+### `gold.training_frame` (view)
+
+**Training read surface** — join of `silver.listings_clean` and `gold.listing_features`
+on `listing_id`. Model training reads this assembled frame only; it never rebuilds
+gold inside `train()`.
+
+| Environment | How training loads data |
+|-------------|-------------------------|
+| Databricks pipeline | `assemble_training_frame(silver, gold)` or `spark.table("...gold.training_frame")` |
+| Local / CI | `data/sample/training_frame.parquet` via `make gold-export` |
+
+ETL (`02_silver_clean`, `03_gold_features`, or `make gold-export`) is the only place
+that runs `silver_to_gold_features()`.
 
 ### `gold.predictions`
 

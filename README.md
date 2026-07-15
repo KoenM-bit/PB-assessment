@@ -17,7 +17,10 @@ make install
 # Generate sample data
 make seed
 
-# Train model locally
+# Build training frame export (bronze → silver → gold → parquet)
+make gold-export
+
+# Train model locally (reads training_frame.parquet only)
 make train
 
 # Run all tests

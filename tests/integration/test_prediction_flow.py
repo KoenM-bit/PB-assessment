@@ -6,6 +6,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 from house_price_ml.data.synthetic import generate_listings
+from house_price_ml.data.training_data import build_training_export
 from house_price_ml.data.validation import validate_prediction_request
 from house_price_ml.features.pipeline import compute_row_features, raw_to_feature_frame
 from house_price_ml.models.train import train
@@ -13,16 +14,22 @@ from house_price_ml.models.train import train
 
 @pytest.fixture
 def sample_data(tmp_path):
-    golden = Path(__file__).resolve().parents[3] / "data" / "sample" / "listings.csv"
-    if golden.exists():
-        return golden
-    path = tmp_path / "listings.csv"
-    generate_listings(500, seed=42).to_csv(path, index=False)
-    return path
+    golden_bronze = Path(__file__).resolve().parents[3] / "data" / "sample" / "listings.csv"
+    golden_export = Path(__file__).resolve().parents[3] / "data" / "sample" / "training_frame.parquet"
+    if golden_export.exists():
+        return golden_export
+    if golden_bronze.exists():
+        build_training_export(golden_bronze, golden_export)
+        return golden_export
+    bronze_path = tmp_path / "listings.csv"
+    generate_listings(500, seed=42).to_csv(bronze_path, index=False)
+    export_path = tmp_path / "training_frame.parquet"
+    build_training_export(bronze_path, export_path)
+    return export_path
 
 
 def test_validation_to_features_to_training(sample_data):
-    df = pd.read_csv(sample_data)
+    df = pd.read_parquet(sample_data)
     row = df.iloc[0].to_dict()
     validation = validate_prediction_request(
         {
@@ -54,7 +61,7 @@ def test_full_training_pipeline(sample_data, tmp_path):
 
 
 def test_feature_frame_batch(sample_data):
-    df = pd.read_csv(sample_data).head(10)
+    df = pd.read_parquet(sample_data).head(10)
     frame = raw_to_feature_frame(df.to_dict("records"))
     assert len(frame) == 10
     assert "region_median_price_per_sqm" in frame.columns

@@ -1,0 +1,9 @@
+{
+  "export_date": "2026-07-15T15:21:19.745422+00:00",
+  "source_file": "/Users/koenmarijt/Documents/Projects/PB-assessment/data/sample/listings.csv",
+  "output_file": "/Users/koenmarijt/Documents/Projects/PB-assessment/data/sample/training_frame.parquet",
+  "training_rows": 500,
+  "rejected_rows": 0,
+  "bronze_rows": 500,
+  "silver_rows": 500
+}

@@ -2,6 +2,8 @@
 
 Develop on your laptop **or** in the Databricks UI. Production operations run in **GitHub Actions** and **Databricks Jobs** — not on your machine.
 
+Configuration reference: [configuration.md](configuration.md).
+
 ## Architecture
 
 ```mermaid
@@ -117,7 +119,7 @@ A typical day when you explore in Databricks, run experiments, and promote one w
 | Phase | Where | Goes live? |
 |-------|--------|------------|
 | **Explore** | Databricks notebooks / Repos | No |
-| **Experiment** | `make train` or CI pipeline | No — logs to MLflow + registers UC version |
+| **Experiment** | `make train` or CI pipeline | No — logs to MLflow; UC register only with `--register` / pipeline |
 | **Promote** | `make promote-challenger` | Yes — sets `@challenger` |
 | **Serve** | `make deploy-serving-from-registry` | Yes — staging endpoint uses `@challenger` + inference smoke |
 | **Verify** | automatic after deploy; `make verify-inference` | Databricks serving + staging `/api/predict` |
@@ -139,7 +141,7 @@ When a feature is ready to evaluate:
 ```bash
 # Local (optional)
 make test
-make train
+make seed && make gold-export && make train
 ```
 
 Or commit and push to `staging` (changes under `ml/src/` or `databricks/notebooks/`):
@@ -286,6 +288,7 @@ These are intentionally dev-only (fast feedback, no cloud cost):
 
 - `make dev` / `make dev-full` / `make dev-netlify`
 - `make seed` (synthetic CSV for offline work)
+- `make gold-export` (local training frame — mirrors Databricks gold path)
 - `make test` during active development (CI runs the same checks remotely)
 
 ---
