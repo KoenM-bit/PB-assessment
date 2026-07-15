@@ -10,7 +10,10 @@ from house_price_ml.data.training_data import assemble_training_frame
 from house_price_ml.models.train import train
 
 catalog = dbutils.widgets.get("catalog") or "house_price_staging"
-widget_commit = dbutils.widgets.get("git_commit")
+try:
+    widget_commit = dbutils.widgets.get("git_commit")
+except Exception:
+    widget_commit = ""
 if widget_commit and widget_commit not in ("unknown", "none", ""):
     os.environ["GIT_COMMIT"] = widget_commit
 

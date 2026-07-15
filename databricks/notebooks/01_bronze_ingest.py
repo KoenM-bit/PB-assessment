@@ -8,11 +8,19 @@
 from house_price_ml.data.data_config import load_data_profile
 from house_price_ml.data.synthetic import generate_listings
 
-catalog = dbutils.widgets.get("catalog") or "house_price_staging"
-profile_name = dbutils.widgets.get("profile") or None
+
+def _optional_widget(name: str, default: str = "") -> str:
+    try:
+        return dbutils.widgets.get(name)
+    except Exception:
+        return default
+
+
+catalog = _optional_widget("catalog", "house_price_staging") or "house_price_staging"
+profile_name = _optional_widget("profile") or None
 try:
-    n_rows = int(dbutils.widgets.get("rows"))
-except Exception:
+    n_rows = int(_optional_widget("rows"))
+except (TypeError, ValueError):
     n_rows = None
 
 if profile_name or n_rows is None:

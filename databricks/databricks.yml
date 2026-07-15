@@ -57,6 +57,7 @@ resources:
             base_parameters:
               catalog: ${var.catalog}
               wheel_path: ${var.ml_wheel_path}
+              profile: engineering
               rows: "10000"
 
     silver_clean:
@@ -173,6 +174,7 @@ resources:
             base_parameters:
               catalog: ${var.catalog}
               wheel_path: ${var.ml_wheel_path}
+              profile: engineering
               rows: "10000"
         - task_key: silver
           depends_on:
