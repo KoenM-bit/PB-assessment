@@ -89,6 +89,10 @@ case "$COMMAND" in
     require_token
     "$ROOT/scripts/verify-databricks.sh"
     ;;
+  verify-inference)
+    require_token
+    "$ROOT/scripts/verify-inference.sh" "$SPROFILE"
+    ;;
   init-catalog)
     require_token
     CATALOG="house_price_staging"
@@ -127,6 +131,7 @@ case "$COMMAND" in
     echo "  promote-champion       Move challenger alias to champion (same catalog)" >&2
     echo "  promote-to-production  Copy staging challenger → prod champion + deploy" >&2
     echo "  verify                 Health-check Databricks connectivity" >&2
+    echo "  verify-inference       Serving + staging API inference smoke (post-promote)" >&2
     echo "  init-catalog           Create Unity Catalog tables" >&2
     echo "  bootstrap-production   Init prod catalog + deploy prod serving" >&2
     echo "  staging-pipeline         bundle + pipeline (experiment, no serving deploy)" >&2

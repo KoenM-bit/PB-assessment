@@ -15,6 +15,7 @@ import argparse
 import importlib.util
 import json
 import os
+import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -258,6 +259,11 @@ def main() -> int:
     print(f"    {target_alias} <- version {prod_version}")
 
     print(f"==> 4/5 Deploy production endpoint: {prod_endpoint}")
+    previous_served_version = deploy_mod._get_current_served_version(
+        host, token, prod_endpoint, prod_model
+    )
+    if previous_served_version:
+        print(f"    Rollback target (previous served version): {previous_served_version}")
     try:
         deploy_endpoint(deploy_mod, host, token, prod_endpoint, prod_model, prod_version)
     except RuntimeError as exc:
@@ -266,6 +272,45 @@ def main() -> int:
 
     print("==> 5/5 Wait for endpoint READY (may take 5–15 min)...")
     wait_for_endpoint(deploy_mod, host, token, prod_endpoint)
+
+    print("==> 6/6 Verify live inference")
+    verify_script = Path(__file__).resolve().parent / "verify-inference.py"
+    verify = subprocess.run(
+        [
+            sys.executable,
+            str(verify_script),
+            "--profile",
+            "production",
+            "--expected-version",
+            prod_version,
+            "--skip-e2e",
+        ],
+        check=False,
+    )
+    if verify.returncode != 0:
+        print("ERROR: Production inference verification failed", file=sys.stderr)
+        rolled_back = deploy_mod._rollback_after_verify_failure(
+            host,
+            token,
+            endpoint=prod_endpoint,
+            model_name=prod_model,
+            failed_version=prod_version,
+            previous_served_version=previous_served_version,
+            alias=target_alias,
+            profile="production",
+            alias_version=previous_prod_version,
+        )
+        if rolled_back:
+            print(
+                "Promotion failed verification; production endpoint and @champion were rolled back.",
+                file=sys.stderr,
+            )
+        else:
+            print(
+                "Promotion failed verification and rollback could not restore production serving.",
+                file=sys.stderr,
+            )
+        return 1
 
     record = {
         "promoted_at": datetime.now(timezone.utc).isoformat(),

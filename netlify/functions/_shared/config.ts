@@ -1,3 +1,9 @@
+export interface ServingTarget {
+  servingEndpoint: string;
+  catalog: string;
+  modelAlias: string;
+}
+
 export interface AppConfig {
   appEnv: string;
   databricksHost: string;
@@ -7,6 +13,7 @@ export interface AppConfig {
   catalog: string;
   schema: string;
   modelAlias: string;
+  peerServingTarget: ServingTarget | null;
   minEvaluationSampleSize: number;
   demoWriteToken: string;
   servingTimeoutMs: number;
@@ -15,7 +22,7 @@ export interface AppConfig {
 }
 
 /** Deployed targets per APP_ENV — avoids per-context vars in Netlify UI (free tier). */
-function deployedDatabricksTarget(appEnv: string): Pick<AppConfig, "servingEndpoint" | "catalog" | "modelAlias"> | null {
+function deployedDatabricksTarget(appEnv: string): ServingTarget | null {
   if (appEnv === "production") {
     return {
       servingEndpoint: "house-price-serving-prod",
@@ -33,9 +40,37 @@ function deployedDatabricksTarget(appEnv: string): Pick<AppConfig, "servingEndpo
   return null;
 }
 
+/** Cross-environment serving used when primary endpoint is deploying or unavailable. */
+function peerServingTarget(appEnv: string): ServingTarget | null {
+  if (appEnv === "staging") {
+    return {
+      servingEndpoint:
+        process.env.PEER_SERVING_ENDPOINT || "house-price-serving-prod",
+      catalog: process.env.PEER_DATABRICKS_CATALOG || "house_price_prod",
+      modelAlias: process.env.PEER_MODEL_ALIAS || "champion",
+    };
+  }
+  if (appEnv === "production") {
+    return {
+      servingEndpoint: process.env.PEER_SERVING_ENDPOINT || "house-price-serving",
+      catalog: process.env.PEER_DATABRICKS_CATALOG || "house_price_staging",
+      modelAlias: process.env.PEER_MODEL_ALIAS || "challenger",
+    };
+  }
+  return null;
+}
+
+function peerFallbackEnabled(appEnv: string): boolean {
+  if (appEnv !== "staging" && appEnv !== "production") {
+    return false;
+  }
+  return process.env.ENABLE_PEER_SERVING_FALLBACK !== "false";
+}
+
 export function getConfig(): AppConfig {
   const appEnv = process.env.APP_ENV || "local";
   const deployed = deployedDatabricksTarget(appEnv);
+  const peer = peerFallbackEnabled(appEnv) ? peerServingTarget(appEnv) : null;
 
   return {
     appEnv,
@@ -47,6 +82,7 @@ export function getConfig(): AppConfig {
     catalog: deployed?.catalog || process.env.DATABRICKS_CATALOG || "house_price_staging",
     schema: process.env.DATABRICKS_SCHEMA || "gold",
     modelAlias: deployed?.modelAlias || process.env.MODEL_ALIAS || "challenger",
+    peerServingTarget: peer,
     minEvaluationSampleSize: parseInt(process.env.MIN_EVALUATION_SAMPLE_SIZE || "30", 10),
     demoWriteToken: process.env.DEMO_WRITE_TOKEN || "",
     servingTimeoutMs: parseInt(process.env.SERVING_TIMEOUT_MS || "30000", 10),

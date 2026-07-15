@@ -187,13 +187,181 @@ def _endpoint_serves_version(
     )
 
 
+def _get_current_served_version(
+    host: str, token: str, endpoint: str, model_name: str
+) -> str | None:
+    if not endpoint_exists(host, token, endpoint):
+        return None
+    try:
+        status_resp = curl_json("GET", f"{host}/api/2.0/serving-endpoints/{endpoint}", token)
+    except RuntimeError:
+        return None
+    entities = status_resp.get("config", {}).get("served_entities") or []
+    for entity in entities:
+        if entity.get("entity_name") == model_name:
+            version = entity.get("entity_version")
+            if version is not None:
+                return str(version)
+    return None
+
+
+def _apply_endpoint_config(
+    host: str, token: str, endpoint: str, model_name: str, serve_version: str
+) -> None:
+    update_body = {
+        "served_entities": [
+            {
+                "entity_name": model_name,
+                "entity_version": serve_version,
+                "workload_size": "Small",
+                "scale_to_zero_enabled": True,
+            }
+        ]
+    }
+    curl_json(
+        "PUT",
+        f"{host}/api/2.0/serving-endpoints/{endpoint}/config",
+        token,
+        update_body,
+    )
+
+
+def _set_registry_alias(model_name: str, alias: str, version: str) -> None:
+    os.environ.setdefault("MLFLOW_TRACKING_URI", "databricks")
+    os.environ.setdefault("MLFLOW_REGISTRY_URI", "databricks-uc")
+    import mlflow
+    from mlflow import MlflowClient
+
+    mlflow.set_tracking_uri("databricks")
+    mlflow.set_registry_uri("databricks-uc")
+    MlflowClient(registry_uri="databricks-uc").set_registered_model_alias(
+        model_name, alias, str(version)
+    )
+
+
+def _wait_for_endpoint_ready(host: str, token: str, endpoint: str) -> bool:
+    for _attempt in range(60):
+        try:
+            status_resp = curl_json("GET", f"{host}/api/2.0/serving-endpoints/{endpoint}", token)
+        except RuntimeError as exc:
+            print(f"    Status check failed: {exc}", file=sys.stderr)
+            time.sleep(15)
+            continue
+
+        state = status_resp.get("state") or {}
+        ready = state.get("ready", "UNKNOWN")
+        updating = state.get("config_update", "UNKNOWN")
+        pending = status_resp.get("pending_config", {})
+        entities = pending.get("served_entities") or status_resp.get("config", {}).get(
+            "served_entities",
+            [],
+        )
+        deployment = "n/a"
+        if entities:
+            entity_state = entities[0].get("state", {})
+            deployment = entity_state.get("deployment", "n/a")
+            message = entity_state.get("deployment_state_message", "")
+            if message:
+                deployment = f"{deployment}: {message[:120]}"
+
+        print(f"    ready={ready}, config_update={updating}, deployment={deployment}")
+        if updating == "UPDATE_FAILED":
+            entity_name = entities[0].get("name") if entities else None
+            config_version = pending.get("config_version") or status_resp.get("config", {}).get(
+                "config_version",
+                0,
+            )
+            if entity_name:
+                print("", file=sys.stderr)
+                print("    Deployment failed. Fetching serving logs...", file=sys.stderr)
+                _print_serving_failure_logs(host, token, endpoint, entity_name, config_version)
+                print("", file=sys.stderr)
+                print("    Fix the issue, then: make train && make deploy-serving", file=sys.stderr)
+                print("    Or inspect logs anytime: make fetch-serving-logs", file=sys.stderr)
+            return False
+        if ready == "READY" and updating in ("NOT_UPDATING", None, ""):
+            return True
+        time.sleep(15)
+
+    print("    WARN: Endpoint not READY yet — check Serving UI in Databricks", file=sys.stderr)
+    return False
+
+
+def _run_inference_verification(
+    profile: str, expected_version: str, *, skip_e2e: bool = False
+) -> int:
+    script = Path(__file__).resolve().parent / "verify-inference.py"
+    cmd = [
+        sys.executable,
+        str(script),
+        "--profile",
+        profile,
+        "--expected-version",
+        expected_version,
+    ]
+    if skip_e2e:
+        cmd.append("--skip-e2e")
+    result = subprocess.run(cmd, env=os.environ.copy(), check=False)
+    return result.returncode
+
+
+def _rollback_after_verify_failure(
+    host: str,
+    token: str,
+    *,
+    endpoint: str,
+    model_name: str,
+    failed_version: str,
+    previous_served_version: str | None,
+    alias: str | None,
+    profile: str,
+    alias_version: str | None = None,
+) -> bool:
+    if not previous_served_version or previous_served_version == failed_version:
+        print(
+            "    No previous serving version available — rollback skipped.",
+            file=sys.stderr,
+        )
+        return False
+
+    restore_alias_version = alias_version or previous_served_version
+
+    print("", file=sys.stderr)
+    print(
+        f"==> ROLLBACK: reverting failed deploy (v{failed_version}) "
+        f"to previous version {previous_served_version}",
+        file=sys.stderr,
+    )
+    try:
+        _apply_endpoint_config(host, token, endpoint, model_name, previous_served_version)
+        print(f"    Endpoint config rolled back to version {previous_served_version}")
+        if not _wait_for_endpoint_ready(host, token, endpoint):
+            print("    WARN: Rollback endpoint did not reach READY in time", file=sys.stderr)
+        if alias:
+            _set_registry_alias(model_name, alias, restore_alias_version)
+            print(f"    Registry alias @{alias} restored to version {restore_alias_version}")
+        if _run_inference_verification(profile, previous_served_version, skip_e2e=True) == 0:
+            print(f"    Rollback verified — serving restored to version {previous_served_version}")
+            return True
+        print("    WARN: Rollback deployed but serving smoke still failing", file=sys.stderr)
+    except Exception as exc:
+        print(f"    ERROR: Rollback failed: {exc}", file=sys.stderr)
+    return False
+
+
 def deploy_endpoint(
     host: str,
     token: str,
     model_name: str,
     serve_version: str,
     endpoint: str,
+    *,
+    alias: str | None = None,
 ) -> int:
+    previous_served_version = _get_current_served_version(host, token, endpoint, model_name)
+    if previous_served_version:
+        print(f"    Rollback target (previous served version): {previous_served_version}")
+
     print(f"==> 3/4 Create or update serving endpoint: {endpoint}")
     served_entity = {
         "entity_name": model_name,
@@ -238,47 +406,37 @@ def deploy_endpoint(
                 return 1
 
     print("==> 4/4 Wait for endpoint to be READY (may take 5–15 min)...")
-    for attempt in range(60):
-        try:
-            status_resp = curl_json("GET", f"{host}/api/2.0/serving-endpoints/{endpoint}", token)
-        except RuntimeError as exc:
-            print(f"    Status check failed: {exc}", file=sys.stderr)
-            time.sleep(15)
-            continue
+    if not _wait_for_endpoint_ready(host, token, endpoint):
+        return 1
 
-        state = status_resp.get("state") or {}
-        ready = state.get("ready", "UNKNOWN")
-        updating = state.get("config_update", "UNKNOWN")
-        pending = status_resp.get("pending_config", {})
-        entities = pending.get("served_entities") or status_resp.get("config", {}).get("served_entities", [])
-        deployment = "n/a"
-        if entities:
-            entity_state = entities[0].get("state", {})
-            deployment = entity_state.get("deployment", "n/a")
-            message = entity_state.get("deployment_state_message", "")
-            if message:
-                deployment = f"{deployment}: {message[:120]}"
-
-        print(f"    ready={ready}, config_update={updating}, deployment={deployment}")
-        if updating == "UPDATE_FAILED":
-            entity_name = entities[0].get("name") if entities else None
-            config_version = pending.get("config_version") or status_resp.get("config", {}).get("config_version", 0)
-            if entity_name:
-                print("", file=sys.stderr)
-                print("    Deployment failed. Fetching serving logs...", file=sys.stderr)
-                _print_serving_failure_logs(host, token, endpoint, entity_name, config_version)
-                print("", file=sys.stderr)
-                print("    Fix the issue, then: make train && make deploy-serving", file=sys.stderr)
-                print("    Or inspect logs anytime: make fetch-serving-logs", file=sys.stderr)
-                return 1
-        if ready == "READY" and updating in ("NOT_UPDATING", None, ""):
-            break
-        time.sleep(15)
-    else:
-        print("    WARN: Endpoint not READY yet — check Serving UI in Databricks", file=sys.stderr)
+    profile = "production" if "prod" in endpoint else "staging"
+    print("")
+    print("==> 5/5 Verify live inference")
+    if _run_inference_verification(profile, serve_version) != 0:
+        rolled_back = _rollback_after_verify_failure(
+            host,
+            token,
+            endpoint=endpoint,
+            model_name=model_name,
+            failed_version=serve_version,
+            previous_served_version=previous_served_version,
+            alias=alias,
+            profile=profile,
+        )
+        if rolled_back:
+            print(
+                "Deploy failed verification; endpoint and alias were rolled back.",
+                file=sys.stderr,
+            )
+        else:
+            print(
+                "Deploy failed verification and rollback could not restore serving.",
+                file=sys.stderr,
+            )
+        return 1
 
     print("")
-    print("Done. Run: make verify-databricks")
+    print("Done. Serving deploy + inference verification passed.")
     return 0
 
 
@@ -310,9 +468,14 @@ def deploy_from_registry(
 
     if _endpoint_serves_version(host, token, endpoint, model_name, serve_version):
         print(f"    Endpoint '{endpoint}' already serves version {serve_version} — no update needed")
-        return 0
+        profile = "production" if "prod" in endpoint else "staging"
+        print("")
+        print("==> Verify live inference")
+        return _run_inference_verification(profile, serve_version)
 
-    return deploy_endpoint(host, token, model_name, serve_version, endpoint)
+    return deploy_endpoint(
+        host, token, model_name, serve_version, endpoint, alias=alias
+    )
 
 
 def main() -> int:
@@ -404,7 +567,9 @@ def main() -> int:
         return 1
     print(f"    Alias '{alias}' -> version {serve_version}")
 
-    return deploy_endpoint(host, token, model_name, serve_version, endpoint)
+    return deploy_endpoint(
+        host, token, model_name, serve_version, endpoint, alias=alias
+    )
 
 
 if __name__ == "__main__":

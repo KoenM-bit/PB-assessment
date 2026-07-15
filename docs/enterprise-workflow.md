@@ -75,7 +75,8 @@ Or from GitHub: **Actions → Databricks → Run workflow → bundle-deploy**.
 | `make upload-ml-wheel` | Part of `staging-pipeline` | Run upload step in Actions |
 | `make train` | `run-pipeline` (train task) | **Workflows → [staging] Full ML Pipeline** |
 | `make promote-challenger RUN_ID=…` | — (run locally or add script to CI) | Experiments UI → copy run ID |
-| `make deploy-serving-from-registry` | `staging-pipeline-deploy` or `deploy-serving` | After promoting `@challenger` |
+| `make deploy-serving-from-registry` | `staging-pipeline-deploy` or `deploy-serving` | After promoting `@challenger`; runs inference verify |
+| `make verify-inference` | `verify-inference` | Post-promote serving + staging API smoke |
 | `make deploy-serving` | `deploy-serving-local` (CI) | Register local artifact + alias + endpoint |
 | `make promote-champion` | Actions → `promote-champion` | — |
 | `make promote-to-production` | Actions → `promote-to-production` + confirm `yes` | — |
@@ -118,7 +119,10 @@ A typical day when you explore in Databricks, run experiments, and promote one w
 | **Explore** | Databricks notebooks / Repos | No |
 | **Experiment** | `make train` or CI pipeline | No — logs to MLflow + registers UC version |
 | **Promote** | `make promote-challenger` | Yes — sets `@challenger` |
-| **Serve** | `make deploy-serving-from-registry` | Yes — staging endpoint uses `@challenger` |
+| **Serve** | `make deploy-serving-from-registry` | Yes — staging endpoint uses `@challenger` + inference smoke |
+| **Verify** | automatic after deploy; `make verify-inference` | Databricks serving + staging `/api/predict` |
+| **Rollback** | automatic if verify fails after deploy | Restores previous endpoint version + registry alias |
+| **Peer fallback** | automatic in Netlify API | staging site → prod serving (and reverse) while primary deploys |
 
 Staging keeps serving the **current** `@challenger` until you explicitly promote and deploy.
 
@@ -175,7 +179,7 @@ Pick the best run from the Experiments UI (copy the **Run ID**).
 # 1. Point @challenger at that experiment run
 make promote-challenger RUN_ID=<run-id-from-experiments-ui>
 
-# 2. Refresh the staging serving endpoint
+# 2. Refresh the staging serving endpoint (auto-runs inference verification)
 make deploy-serving-from-registry
 ```
 

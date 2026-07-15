@@ -22,6 +22,7 @@ on:
           - promote-champion
           - promote-to-production
           - verify
+          - verify-inference
           - init-catalog
           - bootstrap-production
       target:
@@ -46,6 +47,8 @@ on:
       - "scripts/databricks-bundle-deploy.sh"
       - "scripts/upload-ml-wheel.sh"
       - "scripts/deploy-serving.py"
+      - "scripts/verify-inference.py"
+      - "scripts/verify-inference.sh"
       - "scripts/promote-to-production.py"
       - ".github/workflows/databricks.yml"
 

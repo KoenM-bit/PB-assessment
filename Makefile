@@ -1,5 +1,5 @@
 .PHONY: install install-ml install-web dev test test-ml test-web lint lint-ml lint-web seed train promote-challenger clean
-.PHONY: verify-databricks databricks-init-catalog databricks-init-prod
+.PHONY: verify-databricks databricks-init-catalog databricks-init-prod verify-inference verify-inference-prod
 .PHONY: deploy-serving deploy-serving-staging deploy-serving-prod promote-champion promote-to-production bootstrap-production
 .PHONY: deploy-netlify deploy-netlify-prod netlify-build
 .PHONY: databricks-bundle-deploy databricks-bundle-deploy-prod upload-ml-wheel setup-databricks-repo
@@ -65,6 +65,14 @@ promote-challenger:
 verify-databricks:
 	chmod +x scripts/verify-databricks.sh
 	./scripts/verify-databricks.sh
+
+verify-inference:
+	chmod +x scripts/verify-inference.sh
+	./scripts/verify-inference.sh staging
+
+verify-inference-prod:
+	chmod +x scripts/verify-inference.sh
+	./scripts/verify-inference.sh production --skip-e2e
 
 databricks-init-catalog:
 	chmod +x scripts/databricks-init-catalog.sh

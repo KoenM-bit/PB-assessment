@@ -64,7 +64,7 @@ def main() -> int:
     client.set_registered_model_alias(model_name, alias, version)
     print(f"    Alias @{alias} -> version {version}")
     print("")
-    print("Next: refresh the staging endpoint")
+    print("Next: refresh the staging endpoint (includes inference verification)")
     print("  make deploy-serving-from-registry")
     return 0
 

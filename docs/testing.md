@@ -56,6 +56,10 @@ Against staging deployment (`STAGING_URL` env var):
 3. POST actual sale
 4. Verify monitoring data
 
+**Post-promote inference** (`tests/e2e/test_serving_promote.py`): run automatically after
+`make deploy-serving-from-registry` (or Actions `deploy-serving`). Asserts real Databricks
+serving via Netlify — not baseline/mock fallback.
+
 Locally: documents expected steps (mock mode).
 
 ## CI Pipeline (`.github/workflows/pr.yml`)

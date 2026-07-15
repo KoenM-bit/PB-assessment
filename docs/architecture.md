@@ -47,7 +47,7 @@ flowchart TB
 - Databricks Model Serving invocation
 - Prediction and actual-sale logging to Gold tables
 - Monitoring query aggregation
-- Fallback chain: champion/challenger → previous_champion → business baseline
+- Fallback chain: primary serving → **peer environment** (staging ↔ production) → business baseline
 - Timeout and error handling
 
 ### ML Package (`ml/src/house_price_ml`)

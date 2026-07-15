@@ -73,6 +73,15 @@ See [enterprise-workflow.md](enterprise-workflow.md) for the full online develop
 
 ## Rollback Procedure
 
+**Automatic:** `make deploy-serving-from-registry` rolls back the serving endpoint and
+registry alias (`@challenger` / `@champion`) if post-deploy inference verification fails.
+
+While the primary endpoint is deploying or unavailable, the Netlify API automatically tries
+the **peer environment** serving endpoint (staging → production, production → staging)
+before falling back to the business baseline.
+
+**Manual:**
+
 1. In MLflow registry, set `champion` alias to `previous_champion` version
 2. Verify serving endpoint serves rolled-back model
 3. Monitor `gold.serving_metrics` for error rate

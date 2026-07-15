@@ -46,6 +46,22 @@ describe("getConfig", () => {
     expect(config.servingEndpoint).toBe("house-price-serving");
     expect(config.catalog).toBe("house_price_staging");
     expect(config.modelAlias).toBe("challenger");
+    expect(config.peerServingTarget).toEqual({
+      servingEndpoint: "house-price-serving-prod",
+      catalog: "house_price_prod",
+      modelAlias: "champion",
+    });
+  });
+
+  it("routes production peer fallback to staging serving", () => {
+    process.env.APP_ENV = "production";
+
+    const config = getConfig();
+    expect(config.peerServingTarget).toEqual({
+      servingEndpoint: "house-price-serving",
+      catalog: "house_price_staging",
+      modelAlias: "challenger",
+    });
   });
 
   it("respects .env overrides for local development", () => {
@@ -57,5 +73,6 @@ describe("getConfig", () => {
     const config = getConfig();
     expect(config.servingEndpoint).toBe("custom-endpoint");
     expect(config.catalog).toBe("custom_catalog");
+    expect(config.peerServingTarget).toBeNull();
   });
 });
