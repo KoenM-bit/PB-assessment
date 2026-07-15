@@ -5,8 +5,6 @@ from __future__ import annotations
 import pandas as pd
 
 from house_price_ml.config.eda_lab_config import load_eda_lab_config
-from house_price_ml.data.synthetic import generate_listings
-from house_price_ml.data.training_data import build_training_export
 from house_price_ml.evaluation.splits import holdout_test_split
 from house_price_ml.jobs.eda_lab import (
     bivariate_vs_target,
