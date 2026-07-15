@@ -25,12 +25,37 @@ def mape(y_true: np.ndarray, y_pred: np.ndarray) -> float:
     return float(np.mean(np.abs((y_true[mask] - y_pred[mask]) / y_true[mask])) * 100)
 
 
+def mdape(y_true: np.ndarray, y_pred: np.ndarray) -> float:
+    mask = y_true != 0
+    if not mask.any():
+        return 0.0
+    ape = np.abs((y_true[mask] - y_pred[mask]) / y_true[mask])
+    return float(np.median(ape) * 100)
+
+
+def pct_within_tolerance(
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
+    tolerance: float = 0.10,
+) -> float:
+    """Fraction of predictions within +/- tolerance of actual (e.g. 0.10 = 10%)."""
+    mask = y_true != 0
+    if not mask.any():
+        return 0.0
+    y_t = y_true[mask]
+    y_p = y_pred[mask]
+    within = np.abs(y_p - y_t) / y_t <= tolerance
+    return float(np.mean(within))
+
+
 def compute_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> dict[str, float]:
     return {
         "mae": mae(y_true, y_pred),
         "rmse": rmse(y_true, y_pred),
         "bias": bias(y_true, y_pred),
         "mape": mape(y_true, y_pred),
+        "mdape": mdape(y_true, y_pred),
+        "pct_within_10pct": pct_within_tolerance(y_true, y_pred, 0.10),
     }
 
 

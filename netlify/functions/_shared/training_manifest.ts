@@ -30,6 +30,9 @@ export interface TrainingManifest {
     mae_improvement_pct: number;
   };
   walk_forward_baseline_mae_mean: number | null;
+  walk_forward_model_mae_mean?: number | null;
+  gates_passed?: boolean;
+  gate_failures?: string[];
 }
 
 const DEFAULT_MANIFEST: TrainingManifest = {

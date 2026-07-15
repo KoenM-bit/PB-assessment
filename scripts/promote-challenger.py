@@ -19,6 +19,29 @@ def load_env(path: Path) -> None:
         os.environ.setdefault(key.strip(), value.strip())
 
 
+def _run_passes_gates(client, run_id: str) -> tuple[bool, str]:
+    run = client.get_run(run_id)
+    metrics = run.data.metrics
+    tags = run.data.tags
+
+    beats = metrics.get("beats_baseline")
+    if beats is None:
+        beats_tag = tags.get("beats_baseline", "false").lower()
+        beats = 1.0 if beats_tag in ("true", "1", "yes") else 0.0
+
+    gates = metrics.get("gates_passed")
+    if gates is None:
+        gates_tag = tags.get("gates_passed", "false").lower()
+        gates = 1.0 if gates_tag in ("true", "1", "yes") else 0.0
+
+    if beats < 1.0:
+        return False, "beats_baseline=0"
+    if gates < 1.0:
+        failures = tags.get("gate_failures", "unknown")
+        return False, f"gates_passed=0 ({failures})"
+    return True, ""
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Register an MLflow run and set @challenger (does not deploy serving)."
@@ -26,6 +49,11 @@ def main() -> int:
     parser.add_argument("--run-id", required=True, help="MLflow run ID from Experiments UI")
     parser.add_argument("--catalog", default=None, help="Unity Catalog (default: DATABRICKS_CATALOG)")
     parser.add_argument("--alias", default="challenger", help="Registry alias to set")
+    parser.add_argument(
+        "--skip-gate-check",
+        action="store_true",
+        help="Allow promotion even when quality gates failed (not recommended).",
+    )
     args = parser.parse_args()
 
     root = Path(__file__).resolve().parents[1]
@@ -52,6 +80,13 @@ def main() -> int:
     mlflow.set_tracking_uri("databricks")
     mlflow.set_registry_uri("databricks-uc")
 
+    client = MlflowClient(registry_uri="databricks-uc")
+    if not args.skip_gate_check:
+        ok, reason = _run_passes_gates(client, args.run_id)
+        if not ok:
+            print(f"ERROR: Refusing promotion — run failed quality gates ({reason})", file=sys.stderr)
+            return 1
+
     model_name = f"{catalog}.{schema}.house_price_model"
     model_uri = f"runs:/{args.run_id}/model"
 
@@ -60,7 +95,6 @@ def main() -> int:
     version = str(registered.version)
     print(f"    Registered version {version}")
 
-    client = MlflowClient(registry_uri="databricks-uc")
     client.set_registered_model_alias(model_name, alias, version)
     print(f"    Alias @{alias} -> version {version}")
     print("")

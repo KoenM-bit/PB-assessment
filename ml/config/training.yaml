@@ -1,4 +1,4 @@
-# Training pipeline configuration — edit here instead of hardcoding in train.py.
+# Training pipeline configuration
 # Override path: TRAINING_CONFIG_PATH env or train --config <path>
 
 model_type: random_forest
@@ -16,3 +16,24 @@ splits:
   walk_forward_folds: 3
   walk_forward_test_quarters: 1
   holdout_test_quarters: 2
+
+tuning:
+  enabled: false
+  method: optuna
+  n_trials: 30
+  metric: mae
+  cv: walk_forward
+
+search_space:
+  random_forest:
+    n_estimators: [100, 200, 400]
+    max_depth: [8, 12, 16, null]
+  ridge:
+    alpha: [0.1, 1.0, 10.0]
+
+ablation:
+  enabled: false
+
+explainability:
+  enabled: true
+  max_samples: 200

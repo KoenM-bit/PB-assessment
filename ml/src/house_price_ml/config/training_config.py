@@ -38,11 +38,46 @@ class SplitParams(BaseModel):
     holdout_test_quarters: int = Field(default=2, ge=1)
 
 
+class TuningParams(BaseModel):
+    enabled: bool = False
+    method: Literal["optuna", "grid"] = "optuna"
+    n_trials: int = 30
+    metric: str = "mae"
+    cv: str = "walk_forward"
+
+
+class SearchSpaceRF(BaseModel):
+    n_estimators: list[int] = Field(default_factory=lambda: [100, 200, 400])
+    max_depth: list[int | None] = Field(default_factory=lambda: [8, 12, 16, None])
+
+
+class SearchSpaceRidge(BaseModel):
+    alpha: list[float] = Field(default_factory=lambda: [0.1, 1.0, 10.0])
+
+
+class SearchSpace(BaseModel):
+    random_forest: SearchSpaceRF = Field(default_factory=SearchSpaceRF)
+    ridge: SearchSpaceRidge = Field(default_factory=SearchSpaceRidge)
+
+
+class AblationParams(BaseModel):
+    enabled: bool = False
+
+
+class ExplainabilityParams(BaseModel):
+    enabled: bool = False
+    max_samples: int = 200
+
+
 class TrainingConfig(BaseModel):
     model_type: ModelType = "random_forest"
     random_forest: RandomForestParams = Field(default_factory=RandomForestParams)
     ridge: RidgeParams = Field(default_factory=RidgeParams)
     splits: SplitParams = Field(default_factory=SplitParams)
+    tuning: TuningParams = Field(default_factory=TuningParams)
+    search_space: SearchSpace = Field(default_factory=SearchSpace)
+    ablation: AblationParams = Field(default_factory=AblationParams)
+    explainability: ExplainabilityParams = Field(default_factory=ExplainabilityParams)
 
     def make_estimator(self) -> BaseEstimator:
         if self.model_type == "ridge":

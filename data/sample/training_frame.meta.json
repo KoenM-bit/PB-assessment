@@ -1,5 +1,5 @@
 {
-  "export_date": "2026-07-15T15:21:19.745422+00:00",
+  "export_date": "2026-07-15T18:03:45.837646+00:00",
   "source_file": "/Users/koenmarijt/Documents/Projects/PB-assessment/data/sample/listings.csv",
   "output_file": "/Users/koenmarijt/Documents/Projects/PB-assessment/data/sample/training_frame.parquet",
   "training_rows": 500,

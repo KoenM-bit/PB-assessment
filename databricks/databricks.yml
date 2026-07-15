@@ -57,7 +57,7 @@ resources:
             base_parameters:
               catalog: ${var.catalog}
               wheel_path: ${var.ml_wheel_path}
-              rows: "500"
+              rows: "10000"
 
     silver_clean:
       name: "[${bundle.target}] Silver Clean"
@@ -173,7 +173,7 @@ resources:
             base_parameters:
               catalog: ${var.catalog}
               wheel_path: ${var.ml_wheel_path}
-              rows: "500"
+              rows: "10000"
         - task_key: silver
           depends_on:
             - task_key: bronze

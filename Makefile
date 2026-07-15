@@ -50,8 +50,9 @@ lint-web:
 	cd apps/web && npm run lint
 	cd apps/web && npm run typecheck
 
+# Local dev: 10k engineering profile. CI keeps committed 500-row listings.csv.
 seed:
-	cd ml && python -m house_price_ml.data.synthetic --output ../data/sample/listings.csv --rows 500
+	cd ml && python -m house_price_ml.data.synthetic --output ../data/sample/listings.csv --profile engineering
 
 gold-export:
 	chmod +x scripts/build-training-export.py

@@ -156,4 +156,4 @@ Model hyperparameters and split settings live in **[`ml/config/training.yaml`](.
 | Custom file | `TRAINING_CONFIG_PATH` env or `train --config <path>` |
 | Quick experiment | `train --model-type ridge` (overrides YAML `model_type` only) |
 
-The file is bundled into the ML wheel for Databricks jobs. MLflow logs `training_config_path` and hyperparameters from the resolved config.
+The file is bundled into the ML wheel for Databricks jobs. MLflow logs `training_config_path`, hyperparameters from the resolved config, and the resolved config itself as `reports/training_config.yaml`.

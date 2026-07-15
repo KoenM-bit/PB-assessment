@@ -32,6 +32,13 @@ NUMERIC_FEATURES = [
 
 CATEGORICAL_FEATURES = ["region", "property_type", "energy_label"]
 
+FEATURE_GROUPS: dict[str, list[str]] = {
+    "geo": ["dist_to_city_centre_km"],
+    "energy": ["energy_label_score", "surface_x_energy", "energy_label"],
+    "calendar": ["month", "quarter"],
+    "region_median": ["region_median_price_per_sqm"],
+    "interactions": ["surface_x_energy"],
+}
 
 def compute_row_features(row: dict[str, Any], region_medians: dict[tuple[str, str], float] | None = None) -> dict[str, Any]:
     """Compute model-ready row features from raw listing input."""

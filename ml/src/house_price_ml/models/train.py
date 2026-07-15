@@ -6,6 +6,7 @@ import argparse
 import json
 import os
 import subprocess
+import sys
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
@@ -13,6 +14,7 @@ from pathlib import Path
 import mlflow
 import numpy as np
 import pandas as pd
+import yaml
 from mlflow import MlflowClient
 from sklearn.base import BaseEstimator
 
@@ -28,10 +30,17 @@ from house_price_ml.data.training_data import (
     load_export_metadata,
     load_training_frame,
 )
+from house_price_ml.evaluation.ablation import run_ablation
+from house_price_ml.evaluation.explain import compute_shap_summary
+from house_price_ml.evaluation.gate_config import load_quality_gates, resolve_quality_gates_path
+from house_price_ml.evaluation.gates import TrainingGateError, evaluate_training_gates
 from house_price_ml.evaluation.metrics import compute_metrics, evaluate_by_segment
+from house_price_ml.evaluation.model_card import build_model_card
+from house_price_ml.evaluation.segments import price_category
 from house_price_ml.evaluation.splits import holdout_test_split, walk_forward_splits
 from house_price_ml.features.pipeline import get_training_feature_bounds, raw_to_feature_frame
 from house_price_ml.models.baseline import BusinessBaseline
+from house_price_ml.models.tuning import tune_hyperparameters
 from house_price_ml.serving.mlflow_model import build_sklearn_pipeline, save_model_artifact
 
 
@@ -77,6 +86,17 @@ def _resolve_register_model(register_model: bool | None, settings: Settings) -> 
     if os.environ.get("REGISTER_UC_MODEL", "").strip().lower() in {"1", "true", "yes"}:
         return True
     return False
+
+
+def _resolve_enforce_gates(enforce_gates: bool | None, register_model: bool) -> bool:
+    if enforce_gates is not None:
+        return enforce_gates
+    return register_model
+
+
+def _log_yaml_artifact(yaml_path: Path, artifact_name: str) -> None:
+    if yaml_path.is_file():
+        mlflow.log_artifact(str(yaml_path), artifact_path="reports")
 
 
 def _make_estimator(config: TrainingConfig) -> BaseEstimator:
@@ -127,6 +147,29 @@ def _log_json_artifact(payload: dict | list, filename: str) -> None:
         Path(temp_path).unlink(missing_ok=True)
 
 
+def _log_training_config_artifact(config: TrainingConfig) -> None:
+    """Log resolved training config (post CLI overrides) as YAML."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        config_path = Path(tmp_dir) / "training_config.yaml"
+        config_path.write_text(
+            yaml.dump(config.model_dump(), default_flow_style=False, sort_keys=False)
+        )
+        mlflow.log_artifact(str(config_path), artifact_path="reports")
+
+
+def _table_version_mlflow_params(table_versions: dict[str, int]) -> dict[str, str | int]:
+    """Build MLflow params from Delta table version map."""
+    params: dict[str, str | int] = {
+        "training_table_versions": json.dumps(table_versions, sort_keys=True),
+    }
+    for table_name, version in table_versions.items():
+        if table_name.endswith(".silver.listings_clean"):
+            params["silver_table_version"] = version
+        elif table_name.endswith(".gold.listing_features"):
+            params["gold_table_version"] = version
+    return params
+
+
 def _register_model(
     settings: Settings,
     catalog: str | None,
@@ -170,15 +213,21 @@ def train(
     register_alias: str | None = None,
     git_commit: str | None = None,
     data_source: str | None = None,
+    table_versions: dict[str, int] | None = None,
+    enforce_gates: bool | None = None,
+    gates_path: Path | str | None = None,
 ) -> Path:
     settings = get_settings()
     resolved_config_path = resolve_training_config_path(config_path)
+    resolved_gates_path = resolve_quality_gates_path(gates_path)
+    gates_config = load_quality_gates(resolved_gates_path)
     config = training_config or load_training_config(resolved_config_path)
     if model_type is not None:
         config = config.model_copy(update={"model_type": model_type})  # type: ignore[arg-type]
     resolved_model_type = config.model_type
     log_catalog = catalog or settings.databricks_catalog
     register_model = _resolve_register_model(register_model, settings)
+    should_enforce_gates = _resolve_enforce_gates(enforce_gates, register_model)
     resolved_git_commit = _git_commit(git_commit)
     data_path_str = str(data) if isinstance(data, Path) else "dataframe"
     resolved_data_source = data_source or data_path_str
@@ -195,6 +244,11 @@ def train(
         training_frame,
         test_quarters=config.splits.holdout_test_quarters,
     )
+
+    tuning_meta: dict | None = None
+    if config.tuning.enabled:
+        config, tuning_meta = tune_hyperparameters(train_df, config)
+
     splits = walk_forward_splits(
         train_df,
         n_splits=config.splits.walk_forward_folds,
@@ -246,6 +300,28 @@ def train(
     segment_property = evaluate_by_segment(
         holdout, "label_sale_price", "predicted_price", "property_type"
     )
+    holdout["price_category"] = holdout["label_sale_price"].apply(price_category)
+    segment_price = evaluate_by_segment(
+        holdout, "label_sale_price", "predicted_price", "price_category"
+    )
+
+    summary = {
+        "test_metrics": test_metrics,
+        "baseline_metrics": baseline_metrics,
+        "beats_baseline": beats_baseline,
+        "mae_improvement_pct": mae_improvement_pct,
+        "walk_forward_baseline_mae_mean": float(np.mean(wf_baseline_maes)) if wf_baseline_maes else None,
+        "walk_forward_model_mae_mean": float(np.mean(wf_model_maes)) if wf_model_maes else None,
+    }
+    gate_result = evaluate_training_gates(
+        summary,
+        segment_region,
+        segment_property,
+        segment_price,
+        gates=gates_config,
+    )
+    summary["gates_passed"] = gate_result.passed
+    summary["gate_failures"] = gate_result.failures
 
     out = output_dir or Path("artifacts/model")
     out.mkdir(parents=True, exist_ok=True)
@@ -264,9 +340,12 @@ def train(
         "app_env": settings.app_env,
         "catalog": log_catalog,
     }
+    if table_versions:
+        metadata["training_table_versions"] = table_versions
 
     run_name = f"train_{resolved_model_type}_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}"
-    with mlflow.start_run(run_name=run_name):
+    with mlflow.start_run(run_name=run_name) as active_run:
+        mlflow_run_id = active_run.info.run_id
         mlflow.set_tags(
             {
                 "app_env": settings.app_env,
@@ -274,34 +353,47 @@ def train(
                 "git_commit": resolved_git_commit,
                 "training_source": _training_source(),
                 "beats_baseline": str(beats_baseline),
+                "gates_passed": str(gate_result.passed),
+                "gate_failures": "; ".join(gate_result.failures) if gate_result.failures else "none",
                 "data_source": resolved_data_source,
                 "training_config_path": str(resolved_config_path),
+                "quality_gates_path": str(resolved_gates_path),
             }
         )
-        mlflow.log_params(
-            {
-                "model_type": resolved_model_type,
-                "training_config_path": str(resolved_config_path),
-                **config.mlflow_params(),
-                "feature_pipeline_version": settings.feature_pipeline_version,
-                "git_commit": resolved_git_commit,
-                "training_rows": len(train_df),
-                "test_rows": len(test_df),
-                "rejected_rows": rejected_rows,
-                "walk_forward_folds": len(splits),
-                "feature_count": len(feature_names),
-                "region_count": train_df["region"].nunique(),
-                "property_type_count": train_df["property_type"].nunique(),
-                "app_env": settings.app_env,
-                "catalog": log_catalog,
-                "data_path": data_path_str,
-            }
-        )
+        mlflow_params: dict[str, str | int | float] = {
+            "model_type": resolved_model_type,
+            "training_config_path": str(resolved_config_path),
+            "quality_gates_path": str(resolved_gates_path),
+            **config.mlflow_params(),
+            "feature_pipeline_version": settings.feature_pipeline_version,
+            "git_commit": resolved_git_commit,
+            "training_rows": len(train_df),
+            "test_rows": len(test_df),
+            "rejected_rows": rejected_rows,
+            "walk_forward_folds_actual": len(splits),
+            "feature_count": len(feature_names),
+            "region_count": train_df["region"].nunique(),
+            "property_type_count": train_df["property_type"].nunique(),
+            "app_env": settings.app_env,
+            "catalog": log_catalog,
+            "data_path": data_path_str,
+            "enforce_gates": str(should_enforce_gates),
+        }
+        if table_versions:
+            mlflow_params.update(_table_version_mlflow_params(table_versions))
+        mlflow.log_params(mlflow_params)
+        _log_training_config_artifact(config)
+        _log_yaml_artifact(resolved_gates_path, "quality_gates.yaml")
 
         mlflow.log_metrics({f"test_{k}": v for k, v in test_metrics.items()})
         mlflow.log_metrics({f"baseline_{k}": v for k, v in baseline_metrics.items()})
         mlflow.log_metric("beats_baseline", 1.0 if beats_baseline else 0.0)
+        mlflow.log_metric("gates_passed", 1.0 if gate_result.passed else 0.0)
         mlflow.log_metric("mae_improvement_pct", mae_improvement_pct)
+        if tuning_meta:
+            mlflow.log_params(
+                {f"tuning_{k}": json.dumps(v) if isinstance(v, dict | list) else v for k, v in tuning_meta.items()}
+            )
         if wf_baseline_maes:
             mlflow.log_metric("walk_forward_baseline_mae_mean", float(np.mean(wf_baseline_maes)))
             mlflow.log_metric("walk_forward_baseline_mae_std", float(np.std(wf_baseline_maes)))
@@ -317,38 +409,70 @@ def train(
         save_model_artifact(pipeline, baseline, metadata, str(model_path))
         mlflow.log_artifacts(str(model_path), artifact_path="model")
 
-        summary = {
-            "test_metrics": test_metrics,
-            "baseline_metrics": baseline_metrics,
-            "beats_baseline": beats_baseline,
-            "mae_improvement_pct": mae_improvement_pct,
-            "walk_forward_baseline_mae_mean": float(np.mean(wf_baseline_maes)) if wf_baseline_maes else None,
-            "walk_forward_model_mae_mean": float(np.mean(wf_model_maes)) if wf_model_maes else None,
-        }
         (out / "training_summary.json").write_text(json.dumps(summary, indent=2))
 
-        manifest = _build_training_manifest(
-            model_type=resolved_model_type,
-            metadata=metadata,
-            train_df=train_df,
-            test_df=test_df,
-            baseline=baseline,
-            test_metrics=test_metrics,
-            baseline_metrics=baseline_metrics,
-            summary=summary,
-            wf_baseline_maes=wf_baseline_maes,
-            wf_model_maes=wf_model_maes,
-        )
-        _write_training_manifest(
-            manifest_dir=Path(__file__).resolve().parents[4] / "netlify" / "functions" / "_shared",
-            manifest=manifest,
-        )
+        manifest = None
+        if gate_result.passed:
+            manifest = _build_training_manifest(
+                model_type=resolved_model_type,
+                metadata=metadata,
+                train_df=train_df,
+                test_df=test_df,
+                baseline=baseline,
+                test_metrics=test_metrics,
+                baseline_metrics=baseline_metrics,
+                summary=summary,
+                wf_baseline_maes=wf_baseline_maes,
+                wf_model_maes=wf_model_maes,
+                gate_result=gate_result,
+            )
+            _write_training_manifest(
+                manifest_dir=Path(__file__).resolve().parents[4] / "netlify" / "functions" / "_shared",
+                manifest=manifest,
+            )
 
         _log_json_artifact(summary, "training_summary.json")
-        _log_json_artifact(manifest, "training_manifest.json")
+        _log_json_artifact(gate_result.to_dict(), "gate_report.json")
+        if manifest:
+            _log_json_artifact(manifest, "training_manifest.json")
         _log_json_artifact(metadata, "model_metadata.json")
         _log_json_artifact(segment_region.to_dict(orient="records"), "metrics_by_region.json")
         _log_json_artifact(segment_property.to_dict(orient="records"), "metrics_by_property_type.json")
+        _log_json_artifact(segment_price.to_dict(orient="records"), "metrics_by_price_category.json")
+
+        ablation_report: list[dict] | None = None
+        if config.ablation.enabled:
+            ablation_df = run_ablation(train_df, test_df, config)
+            ablation_report = ablation_df.to_dict(orient="records")
+            _log_json_artifact(ablation_report, "ablation_report.json")
+
+        shap_summary: dict | None = None
+        if config.explainability.enabled:
+            sample_n = min(config.explainability.max_samples, len(X_test))
+            shap_summary = compute_shap_summary(
+                pipeline,
+                X_test.sample(sample_n, random_state=42) if sample_n < len(X_test) else X_test,
+            )
+            _log_json_artifact(shap_summary, "shap_summary.json")
+
+        model_card = build_model_card(
+            model_type=resolved_model_type,
+            metadata={**metadata, "data_source": resolved_data_source},
+            summary=summary,
+            gate_result=gate_result,
+            feature_names=feature_names,
+            segment_region=segment_region.to_dict(orient="records"),
+            segment_property=segment_property.to_dict(orient="records"),
+            segment_price=segment_price.to_dict(orient="records"),
+            mlflow_run_id=mlflow_run_id,
+            gates_config_path=str(resolved_gates_path),
+            training_config_path=str(resolved_config_path),
+            tuning_meta=tuning_meta,
+            shap_summary=shap_summary,
+            ablation_report=ablation_report,
+        )
+        (out / "model_card.json").write_text(json.dumps(model_card, indent=2))
+        _log_json_artifact(model_card, "model_card.json")
 
         importance = _feature_importance(pipeline, feature_names)
         if importance:
@@ -359,10 +483,12 @@ def train(
         mlflow.log_artifact(str(holdout_path), artifact_path="reports")
 
         registered_version = None
-        if register_model:
+        if register_model and (gate_result.passed or not should_enforce_gates):
             registered_version = _register_model(
                 settings, log_catalog, model_path, register_alias
             )
+        elif register_model and should_enforce_gates and not gate_result.passed:
+            print("Skipping UC registration: quality gates failed.")
         if registered_version:
             if register_alias:
                 print(
@@ -378,6 +504,11 @@ def train(
         else:
             print("Experiment logged (model not registered to Unity Catalog).")
 
+    if should_enforce_gates and not gate_result.passed:
+        raise TrainingGateError(
+            "Training quality gates failed: " + "; ".join(gate_result.failures)
+        )
+
     return out
 
 
@@ -392,9 +523,10 @@ def _build_training_manifest(
     summary: dict,
     wf_baseline_maes: list[float],
     wf_model_maes: list[float],
+    gate_result=None,
 ) -> dict:
     baseline_mae = baseline_metrics["mae"]
-    return {
+    manifest = {
         "model_type": model_type,
         "feature_pipeline_version": metadata["feature_pipeline_version"],
         "training_date": metadata["training_date"],
@@ -427,7 +559,12 @@ def _build_training_manifest(
         },
         "walk_forward_baseline_mae_mean": float(np.mean(wf_baseline_maes)) if wf_baseline_maes else None,
         "walk_forward_model_mae_mean": float(np.mean(wf_model_maes)) if wf_model_maes else None,
+        "gates_passed": gate_result.passed if gate_result else True,
+        "gate_failures": gate_result.failures if gate_result else [],
     }
+    if "training_table_versions" in metadata:
+        manifest["training_table_versions"] = metadata["training_table_versions"]
+    return manifest
 
 
 def _write_training_manifest(manifest_dir: Path, manifest: dict) -> None:
@@ -469,22 +606,59 @@ def main() -> None:
     )
     parser.add_argument("--git-commit", default=None, help="Git SHA for experiment tags")
     parser.add_argument("--data-source", default=None, help="Human-readable data source label")
+    parser.add_argument(
+        "--table-versions",
+        default=None,
+        help='JSON map of Delta table name to version, e.g. \'{"catalog.silver.listings_clean": 3}\'',
+    )
+    parser.add_argument(
+        "--enforce-gates",
+        action="store_true",
+        help="Fail when quality gates do not pass (default when --register).",
+    )
+    parser.add_argument(
+        "--no-enforce-gates",
+        action="store_true",
+        help="Log gate failures but do not fail the run.",
+    )
+    parser.add_argument(
+        "--gates-config",
+        type=Path,
+        default=None,
+        help="Quality gates YAML (default: ml/config/quality_gates.yaml)",
+    )
     args = parser.parse_args()
     settings = get_settings()
     if args.no_register and args.register:
         parser.error("Use only one of --register or --no-register")
+    if args.enforce_gates and args.no_enforce_gates:
+        parser.error("Use only one of --enforce-gates or --no-enforce-gates")
     register_model = True if args.register else False if args.no_register else None
-    path = train(
-        args.data,
-        args.model_type,
-        args.output,
-        config_path=args.config,
-        catalog=args.catalog or settings.databricks_catalog,
-        register_model=register_model,
-        register_alias=args.register_alias,
-        git_commit=args.git_commit,
-        data_source=args.data_source,
-    )
+    enforce_gates = True if args.enforce_gates else False if args.no_enforce_gates else None
+    table_versions = None
+    if args.table_versions:
+        parsed = json.loads(args.table_versions)
+        if not isinstance(parsed, dict):
+            parser.error("--table-versions must be a JSON object")
+        table_versions = {str(k): int(v) for k, v in parsed.items()}
+    try:
+        path = train(
+            args.data,
+            args.model_type,
+            args.output,
+            config_path=args.config,
+            catalog=args.catalog or settings.databricks_catalog,
+            register_model=register_model,
+            register_alias=args.register_alias,
+            git_commit=args.git_commit,
+            data_source=args.data_source,
+            table_versions=table_versions,
+            enforce_gates=enforce_gates,
+            gates_path=args.gates_config,
+        )
+    except TrainingGateError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
     print(f"Model saved to {path}")
 
 

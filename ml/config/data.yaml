@@ -1,0 +1,40 @@
+# Synthetic data generation profiles
+
+default_profile: engineering
+
+profiles:
+  demo:
+    rows: 500
+    seed: 42
+    missing_rate: 0.0
+    outlier_rate: 0.0
+    invalid_rate: 0.01
+    start_year: 2023
+    span_days: 900
+
+  ci:
+    rows: 500
+    seed: 42
+    missing_rate: 0.0
+    outlier_rate: 0.0
+    invalid_rate: 0.01
+    start_year: 2023
+    span_days: 900
+
+  engineering:
+    rows: 10000
+    seed: 42
+    missing_rate: 0.05
+    outlier_rate: 0.02
+    invalid_rate: 0.02
+    start_year: 2020
+    span_days: 1825
+
+  stress:
+    rows: 50000
+    seed: 42
+    missing_rate: 0.08
+    outlier_rate: 0.03
+    invalid_rate: 0.03
+    start_year: 2018
+    span_days: 2555

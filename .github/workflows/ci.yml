@@ -61,7 +61,7 @@ jobs:
       - run: pip install -e "ml/[dev]"
       - run: make gold-export
       - run: ruff check ml/src ml/tests tests
-      - run: cd ml && pytest tests/unit tests/data tests/model/test_regression.py -v
+      - run: cd ml && pytest tests/unit tests/data tests/model/test_regression.py tests/model/test_smoke.py tests/evaluation -v
       - run: pytest tests/integration -v
 
   netlify-build:

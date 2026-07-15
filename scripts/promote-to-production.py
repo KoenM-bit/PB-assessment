@@ -50,6 +50,44 @@ def version_tags(client, model_name: str, version: str) -> dict[str, str]:
         return {}
 
 
+def version_run_id(client, model_name: str, version: str) -> str | None:
+    try:
+        mv = client.get_model_version(model_name, version)
+        return mv.run_id
+    except Exception:
+        return None
+
+
+def run_test_mae(client, run_id: str | None) -> float | None:
+    if not run_id:
+        return None
+    try:
+        run = client.get_run(run_id)
+        return run.data.metrics.get("test_mae")
+    except Exception:
+        return None
+
+
+def check_promotion_mae_gate(
+    client,
+    challenger_run_id: str | None,
+    champion_run_id: str | None,
+    max_ratio: float,
+) -> tuple[bool, str]:
+    challenger_mae = run_test_mae(client, challenger_run_id)
+    champion_mae = run_test_mae(client, champion_run_id)
+    if challenger_mae is None or champion_mae is None:
+        return True, "skipped (missing test_mae on run)"
+    ratio = challenger_mae / champion_mae if champion_mae else float("inf")
+    if ratio > max_ratio:
+        return (
+            False,
+            f"challenger test_mae {challenger_mae:.0f} exceeds "
+            f"{max_ratio:.0%} of champion MAE {champion_mae:.0f} (ratio={ratio:.2f})",
+        )
+    return True, f"ratio={ratio:.2f}"
+
+
 def wait_for_endpoint(deploy_mod, host: str, token: str, endpoint: str) -> bool:
     import time
 
@@ -198,6 +236,9 @@ def main() -> int:
     from mlflow import MlflowClient
     from mlflow.exceptions import RestException
 
+    sys.path.insert(0, str(root / "ml" / "src"))
+    from house_price_ml.evaluation.gate_config import load_quality_gates
+
     mlflow.set_tracking_uri("databricks")
     mlflow.set_registry_uri("databricks-uc")
 
@@ -216,17 +257,32 @@ def main() -> int:
     source_version = str(candidate.version)
     source_uri = f"models:/{staging_model}/{source_version}"
     source_tags = version_tags(client, staging_model, source_version)
+    source_run_id = version_run_id(client, staging_model, source_version)
     print(f"    {staging_model} @{source_alias} -> version {source_version}")
     print(f"    source_uri: {source_uri}")
     if source_tags:
         print(f"    tags: {json.dumps(source_tags)}")
 
     previous_prod_version: str | None = None
+    champion_run_id: str | None = None
     try:
         current_champion = client.get_model_version_by_alias(prod_model, target_alias)
         previous_prod_version = str(current_champion.version)
+        champion_run_id = version_run_id(client, prod_model, previous_prod_version)
     except RestException:
         pass
+
+    promotion_gates = load_quality_gates()
+    mae_ok, mae_detail = check_promotion_mae_gate(
+        client,
+        source_run_id,
+        champion_run_id,
+        promotion_gates.promotion.max_mae_vs_champion_ratio,
+    )
+    if not mae_ok:
+        print(f"ERROR: Promotion MAE gate failed — {mae_detail}", file=sys.stderr)
+        return 1
+    print(f"    MAE promotion gate: {mae_detail}")
 
     if args.dry_run:
         print("")

@@ -39,6 +39,8 @@ Each experiment logs:
 - Feature list and `feature_pipeline_version`
 - Git commit hash
 - Training date and data table reference
+- Delta table versions for `silver.listings_clean` and `gold.listing_features` on Databricks runs (`training_table_versions`, `silver_table_version`, `gold_table_version`)
+- Resolved training config as `reports/training_config.yaml` (reflects CLI overrides such as `--model-type`)
 - Validation approach
 - Model artifact with shared preprocessing pipeline
 

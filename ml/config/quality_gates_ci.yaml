@@ -1,0 +1,17 @@
+# Relaxed gates for CI / golden 500-row fixture (fast tests).
+# Production training on 10k+ rows uses quality_gates.yaml.
+
+holdout:
+  beats_baseline: true
+  max_mae_vs_baseline_ratio: 1.10
+  min_pct_within_10pct: 0.50
+
+walk_forward:
+  model_beats_baseline: false
+
+segments:
+  max_mae_degradation_vs_overall: 1.15
+  min_segment_sample_size: 20
+
+promotion:
+  max_mae_vs_champion_ratio: 1.10

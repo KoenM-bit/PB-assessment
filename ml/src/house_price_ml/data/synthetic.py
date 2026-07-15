@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 
 from house_price_ml.config.constants import CITY_CENTRES, ENERGY_LABELS, PROPERTY_TYPES, REGIONS
+from house_price_ml.data.data_config import load_data_profile
 
 
 def _base_price(region: str, prop_type: str, surface: float) -> float:
@@ -34,12 +35,21 @@ def _base_price(region: str, prop_type: str, surface: float) -> float:
     return region_factor * type_factor * surface * 3200
 
 
-def generate_listings(n: int = 500, seed: int = 42) -> pd.DataFrame:
+def generate_listings(
+    n: int = 500,
+    seed: int = 42,
+    *,
+    missing_rate: float = 0.0,
+    outlier_rate: float = 0.0,
+    invalid_rate: float = 0.01,
+    start_year: int = 2023,
+    span_days: int = 900,
+) -> pd.DataFrame:
     rng = np.random.default_rng(seed)
     rows = []
-    start = date(2023, 1, 1)
+    start = date(start_year, 1, 1)
 
-    for i in range(n):
+    for _ in range(n):
         region = rng.choice(REGIONS)
         prop_type = rng.choice(PROPERTY_TYPES)
         surface = float(rng.integers(45, 220))
@@ -48,25 +58,35 @@ def generate_listings(n: int = 500, seed: int = 42) -> pd.DataFrame:
         build_year = int(rng.integers(1950, 2024))
         energy = rng.choice(ENERGY_LABELS, p=[0.02, 0.05, 0.1, 0.2, 0.2, 0.15, 0.12, 0.1, 0.06])
         garden = bool(rng.random() > 0.3)
-        listing_date = start + timedelta(days=int(rng.integers(0, 900)))
+        listing_date = start + timedelta(days=int(rng.integers(0, span_days)))
         noise = rng.normal(0, 35000)
         sale_price = max(150000, _base_price(region, prop_type, surface) + noise)
-        # Non-linear effects the business baseline does not model
         age = listing_date.year - build_year
-        sale_price += max(0, (30 - age)) * 1500  # newer homes premium
-        sale_price += (rooms - 4) * 8000  # room count effect
+        sale_price += max(0, (30 - age)) * 1500
+        sale_price += (rooms - 4) * 8000
         if energy in ("A++", "A+", "A"):
             sale_price *= 1.08
         elif energy in ("F", "G"):
             sale_price *= 0.92
         if garden:
             sale_price *= 1.05
-        sale_price += rng.normal(0, 15000)  # extra noise
+        sale_price += rng.normal(0, 15000)
 
         centre_lat, centre_lon = CITY_CENTRES[region]
-        # Jitter around the regional city centre (~0–15 km) so geo features match the region label.
         latitude = centre_lat + rng.normal(0, 0.04)
         longitude = centre_lon + rng.normal(0, 0.06)
+
+        sale_date = listing_date + timedelta(days=int(rng.integers(14, 120)))
+
+        if rng.random() < invalid_rate:
+            surface = -abs(surface)
+        if rng.random() < outlier_rate:
+            sale_price *= rng.uniform(2.5, 4.0)
+        if rng.random() < missing_rate:
+            if rng.random() < 0.5:
+                sale_price = np.nan
+            else:
+                sale_date = None
 
         rows.append(
             {
@@ -83,9 +103,9 @@ def generate_listings(n: int = 500, seed: int = 42) -> pd.DataFrame:
                 "energy_label": energy,
                 "property_type": prop_type,
                 "garden": garden,
-                "asking_price": sale_price * rng.uniform(0.95, 1.08),
+                "asking_price": sale_price * rng.uniform(0.95, 1.08) if np.isfinite(sale_price) else np.nan,
                 "sale_price": sale_price,
-                "sale_date": listing_date + timedelta(days=int(rng.integers(14, 120))),
+                "sale_date": sale_date,
                 "ingestion_timestamp": datetime.utcnow(),
                 "ingestion_date": datetime.utcnow().date(),
             }
@@ -94,13 +114,43 @@ def generate_listings(n: int = 500, seed: int = 42) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def generate_from_profile(profile_name: str | None = None) -> pd.DataFrame:
+    profile = load_data_profile(profile_name)
+    return generate_listings(
+        profile.rows,
+        profile.seed,
+        missing_rate=profile.missing_rate,
+        outlier_rate=profile.outlier_rate,
+        invalid_rate=profile.invalid_rate,
+        start_year=profile.start_year,
+        span_days=profile.span_days,
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--rows", type=int, default=500)
-    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--rows", type=int, default=None)
+    parser.add_argument("--seed", type=int, default=None)
+    parser.add_argument("--profile", type=str, default=None, help="Data profile from ml/config/data.yaml")
+    parser.add_argument("--missing-rate", type=float, default=None)
+    parser.add_argument("--outlier-rate", type=float, default=None)
     args = parser.parse_args()
-    df = generate_listings(args.rows, args.seed)
+
+    if args.profile or (args.rows is None and args.seed is None):
+        profile = load_data_profile(args.profile)
+        df = generate_listings(
+            args.rows or profile.rows,
+            args.seed or profile.seed,
+            missing_rate=args.missing_rate if args.missing_rate is not None else profile.missing_rate,
+            outlier_rate=args.outlier_rate if args.outlier_rate is not None else profile.outlier_rate,
+            invalid_rate=profile.invalid_rate,
+            start_year=profile.start_year,
+            span_days=profile.span_days,
+        )
+    else:
+        df = generate_listings(args.rows or 500, args.seed or 42)
+
     args.output.parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(args.output, index=False)
     print(f"Wrote {len(df)} listings to {args.output}")

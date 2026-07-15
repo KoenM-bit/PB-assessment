@@ -81,10 +81,19 @@ make test-e2e      # Requires STAGING_URL
 
 ## Model Quality Gates
 
-| Gate | Threshold |
-|------|-----------|
-| Beats baseline | MAE < baseline MAE on holdout |
-| Champion regression | MAE within 10% of champion |
-| Segment regression | No segment > 15% MAE degradation |
+Gates are defined in [`ml/config/quality_gates.yaml`](../ml/config/quality_gates.yaml) and
+enforced in [`ml/src/house_price_ml/evaluation/gates.py`](../ml/src/house_price_ml/evaluation/gates.py).
 
-Configurable in `ml/tests/model/test_regression.py`.
+| Gate | Threshold | Enforced when |
+|------|-----------|---------------|
+| Beats baseline | MAE < baseline MAE on holdout | `train --register` (default) |
+| MAE vs baseline ratio | model MAE ≤ 110% of baseline | training |
+| pct_within_10pct | ≥ 50% within ±10% of actual | training |
+| Walk-forward | model MAE < baseline mean | training |
+| Segment degradation | no segment MAE > 115% of overall | training (min 5 samples) |
+| Champion promotion | challenger MAE ≤ 110% of prod champion | `promote-to-production` |
+
+CI uses the 500-row golden fixture with [`quality_gates_ci.yaml`](../ml/config/quality_gates_ci.yaml).
+Production/staging training (`make seed` → 10k rows) enforces full [`quality_gates.yaml`](../ml/config/quality_gates.yaml).
+
+`promote-challenger` refuses runs where `beats_baseline=0` or `gates_passed=0`.

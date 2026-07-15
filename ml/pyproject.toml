@@ -27,12 +27,21 @@ dev = [
     "mypy>=1.7",
     "pandas-stubs>=2.0",
 ]
+tuning = [
+    "optuna>=3.5",
+]
+analysis = [
+    "shap>=0.44",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/house_price_ml"]
 
 [tool.hatch.build.targets.wheel.force-include]
 "config/training.yaml" = "house_price_ml/config/training.yaml"
+"config/quality_gates.yaml" = "house_price_ml/config/quality_gates.yaml"
+"config/data.yaml" = "house_price_ml/config/data.yaml"
+"config/quality_gates_ci.yaml" = "house_price_ml/config/quality_gates_ci.yaml"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
