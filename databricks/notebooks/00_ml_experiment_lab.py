@@ -15,6 +15,57 @@
 # COMMAND ----------
 
 # MAGIC %md
+# MAGIC ## 0. Install package (interactive notebooks)
+# MAGIC
+# MAGIC Jobs attach the wheel automatically; **interactive** runs need a fresh wheel after deploy.
+# MAGIC
+# MAGIC 1. Run `make databricks-bundle-deploy` (or wait for CI `bundle-deploy`).
+# MAGIC 2. Set **`wheel_path`** to your bundle artifact, e.g.  
+# MAGIC    `/Workspace/Users/<you>/.bundle/house-price-ml/staging/artifacts/.internal/house_price_ml-0.1.0-py3-none-any.whl`
+# MAGIC 3. Run this cell twice if prompted (install → Python restart → verify).
+
+# COMMAND ----------
+
+
+def _widget(name: str, default: str = "") -> str:
+    try:
+        dbutils.widgets.text(name, default)
+        return dbutils.widgets.get(name)
+    except Exception:
+        return default
+
+
+dbutils.widgets.text("wheel_path", "")
+
+import importlib.util
+import subprocess
+import sys
+
+_wheel_default_help = (
+    "Set wheel_path widget to the bundle wheel (.whl), then re-run this cell. "
+    "Example: /Workspace/Users/<you>/.bundle/house-price-ml/staging/artifacts/.internal/"
+    "house_price_ml-0.1.0-py3-none-any.whl"
+)
+
+if importlib.util.find_spec("house_price_ml.config.eda_lab_config") is None:
+    wheel_path = _widget("wheel_path", "").strip()
+    if not wheel_path:
+        raise ModuleNotFoundError(
+            "house_price_ml.config.eda_lab_config not found (stale wheel). " + _wheel_default_help
+        )
+    print(f"Installing wheel from {wheel_path}")
+    subprocess.check_call(
+        [sys.executable, "-m", "pip", "install", wheel_path, "--force-reinstall", "-q"]
+    )
+    dbutils.library.restartPython()
+else:
+    import house_price_ml
+
+    print(f"house_price_ml OK — version {getattr(house_price_ml, '__version__', '0.1.0')}")
+
+# COMMAND ----------
+
+# MAGIC %md
 # MAGIC ## 1. Setup
 
 # COMMAND ----------
@@ -41,7 +92,6 @@ from house_price_ml.jobs.eda_lab import (
     evaluate_business_hypotheses,
     evaluate_data_quality_gates,
     residual_analysis_report,
-    run_eda_playbook,
     run_feature_matrix,
     run_model_selection,
     run_shap_report,
@@ -61,15 +111,6 @@ from house_price_ml.jobs.experiment_lab import (
 from house_price_ml.models.train import train
 
 # COMMAND ----------
-
-
-def _widget(name: str, default: str = "") -> str:
-    try:
-        dbutils.widgets.text(name, default)
-        return dbutils.widgets.get(name)
-    except Exception:
-        return default
-
 
 dbutils.widgets.dropdown("catalog", "house_price_staging", ["house_price_staging", "house_price_prod"])
 dbutils.widgets.dropdown("data_source", "sample", ["delta", "sample"])
