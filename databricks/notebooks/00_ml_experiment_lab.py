@@ -14,7 +14,7 @@
 # MAGIC - The final test period is evaluated once for the selected candidate.
 # MAGIC - Promotion remains the responsibility of the official production pipeline.
 # MAGIC
-# MAGIC Configuration is loaded from `ml/config/eda_lab_enterprise.yaml`.
+# MAGIC Configuration lives in **section 2** — edit the `LAB_CONFIG` dict in that cell.
 
 # COMMAND ----------
 
@@ -150,10 +150,6 @@ dbutils.widgets.text(
     "mlflow_experiment",
     "/Shared/house_price_prediction_lab_enterprise",
 )
-dbutils.widgets.text(
-    "eda_config_path",
-    "ml/config/eda_lab_enterprise.yaml",
-)
 dbutils.widgets.dropdown("run_rf_search", "true", ["true", "false"])
 dbutils.widgets.dropdown("run_catboost_search", "true", ["true", "false"])
 dbutils.widgets.dropdown("run_shap", "false", ["true", "false"])
@@ -173,10 +169,6 @@ mlflow_experiment = _widget(
     "mlflow_experiment",
     "/Shared/house_price_prediction_lab_enterprise",
 )
-eda_config_path = _widget(
-    "eda_config_path",
-    "ml/config/eda_lab_enterprise.yaml",
-).strip()
 run_rf_search = parse_bool(_widget("run_rf_search", "true"))
 run_catboost_search = parse_bool(_widget("run_catboost_search", "true"))
 run_shap = parse_bool(_widget("run_shap", "false"))
@@ -206,38 +198,166 @@ print("Lane contract: lab-only, register_model=False.")
 print(f"Catalog: {catalog}")
 print(f"Data source: {data_source}")
 print(f"MLflow experiment: {mlflow_experiment}")
-print(f"EDA config: {eda_config_path}")
 print(f"Git commit: {lab_git_commit}")
+print("Edit LAB_CONFIG in section 2 before running downstream cells.")
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 2. Configuration loader
+# MAGIC ## 2. Lab configuration
+# MAGIC
+# MAGIC Edit `LAB_CONFIG` below, then run this cell. All downstream sections read from these variables.
 
 # COMMAND ----------
 
-def _load_yaml(path: str) -> dict[str, Any]:
-    import yaml
-
-    candidate_paths = [
-        Path(path),
-        Path.cwd() / path,
-        Path("/Workspace") / path.lstrip("/"),
-    ]
-
-    for candidate in candidate_paths:
-        if candidate.exists():
-            payload = yaml.safe_load(candidate.read_text()) or {}
-            payload["_resolved_path"] = str(candidate)
-            return payload
-
-    raise FileNotFoundError(
-        f"Could not locate YAML config: {path}. "
-        f"Tried: {[str(p) for p in candidate_paths]}"
-    )
-
-
-LAB_CONFIG = _load_yaml(eda_config_path)
+# Edit this dict for your experiment — no external YAML file required.
+LAB_CONFIG: dict[str, Any] = {
+    "target_column": "label_sale_price",
+    "date_column": "sale_date",
+    "id_column": "listing_id",
+    "random_state": 42,
+    "excluded_features": ["asking_price", "sale_price_per_sqm"],
+    "sections": {
+        "univariate": True,
+        "categorical_eda": True,
+        "bivariate": True,
+        "time_drift": True,
+        "feature_matrix": True,
+    },
+    "split": {
+        "train_fraction": 0.70,
+        "validation_fraction": 0.15,
+    },
+    "data_quality": {
+        "max_duplicate_group_row_rate": 0.01,
+        "duplicate_key": [
+            "region",
+            "postcode",
+            "property_type",
+            "energy_label",
+            "surface_area",
+            "number_of_rooms",
+            "number_of_bedrooms",
+            "build_year",
+            "latitude",
+            "longitude",
+            "garden",
+            "label_sale_price",
+            "sale_date",
+        ],
+    },
+    "eda": {
+        "histogram_bins": 30,
+        "max_numeric_plots": 30,
+        "max_categorical_plots": 30,
+        "max_categories_per_plot": 15,
+        "minimum_category_group_size": 5,
+    },
+    "business_hypotheses": [
+        {
+            "name": "Surface has a meaningful linear relationship with sale price",
+            "kind": "numeric_correlation",
+            "feature": "surface_area",
+            "target": "label_sale_price",
+            "minimum_absolute_correlation": 0.50,
+        },
+        {
+            "name": "Property type separates average sale prices",
+            "kind": "categorical_spread",
+            "feature": "property_type",
+            "target": "label_sale_price",
+            "minimum_group_size": 5,
+            "minimum_mean_spread": 25000,
+        },
+    ],
+    "feature_matrix": {
+        "max_depth": 4,
+        "max_experiments": 500,
+        "stability_top_n": 20,
+        "groups": {
+            "surface": ["surface_area"],
+            "region": ["region"],
+            "coordinates": ["latitude", "longitude"],
+            "property_type": ["property_type"],
+            "rooms": ["number_of_rooms", "number_of_bedrooms"],
+            "age": ["build_year", "property_age", "is_new_build"],
+            "property_characteristics": ["energy_label", "garden"],
+            "engineered_space": [
+                "surface_per_room",
+                "surface_per_bedroom",
+                "bedroom_ratio",
+                "room_density",
+                "non_bedroom_rooms",
+                "surface_x_garden",
+            ],
+            "postcode": ["postcode_prefix"],
+            "historical_market": [
+                "historic_region_median_price_per_sqm",
+                "historic_region_property_median_price_per_sqm",
+                "historic_region_12m_median_price_per_sqm",
+                "historic_region_property_12m_median_price_per_sqm",
+                "historic_region_sale_count",
+                "historic_region_property_sale_count",
+                "historic_region_12m_sale_count",
+                "historic_region_property_12m_sale_count",
+                "historic_region_value_estimate",
+                "historic_region_property_value_estimate",
+                "historic_region_12m_value_estimate",
+                "historic_region_property_12m_value_estimate",
+            ],
+        },
+        "random_forest": {
+            "n_estimators": 200,
+            "min_samples_leaf": 3,
+            "max_features": "sqrt",
+        },
+    },
+    "candidate_selection": {
+        "relative_mae_tolerance": 0.02,
+        "top_k_feature_sets": 3,
+        "final_model_relative_mae_tolerance": 0.01,
+    },
+    "model_selection": {
+        "compare_random_forest": True,
+        "compare_catboost": True,
+        "random_forest": {
+            "n_estimators": 500,
+            "final_n_estimators": 800,
+            "min_samples_leaf": 3,
+            "max_features": "sqrt",
+        },
+        "catboost": {
+            "iterations": 1000,
+            "minimum_final_iterations": 50,
+            "learning_rate": 0.05,
+            "depth": 6,
+            "loss_function": "MAE",
+            "eval_metric": "MAE",
+            "early_stopping_rounds": 75,
+            "l2_leaf_reg": 5.0,
+            "random_strength": 1.0,
+        },
+    },
+    "residual_analysis": {
+        "minimum_segment_count": 5,
+        "worst_predictions_n": 30,
+        "histogram_bins": 20,
+        "price_quantiles": 4,
+        "surface_quantiles": 4,
+        "segments": [
+            "region",
+            "property_type",
+            "number_of_bedrooms",
+            "price_bucket",
+            "surface_bucket",
+        ],
+    },
+    "shap": {
+        "enabled": False,
+        "sample_size": 200,
+        "max_display": 20,
+    },
+}
 
 TARGET_COLUMN = LAB_CONFIG.get("target_column", "label_sale_price")
 DATE_COLUMN = LAB_CONFIG.get("date_column", "sale_date")
@@ -2801,7 +2921,7 @@ with mlflow.start_run(
 
     mlflow.log_dict(
         LAB_CONFIG,
-        "config/eda_lab_enterprise.json",
+        "config/lab_config.json",
     )
     mlflow.log_dict(
         dq_summary,
@@ -3003,8 +3123,7 @@ display(search_recent_runs(mlflow_experiment, n=10))
 # MAGIC
 # MAGIC Before promotion through official CI:
 # MAGIC
-# MAGIC - Commit `ml/config/eda_lab_enterprise.yaml`
-# MAGIC - Commit feature-engineering changes under `ml/src/`
+# MAGIC - Commit durable feature-engineering changes under `ml/src/`
 # MAGIC - Confirm exact-duplicate handling in Silver/Gold
 # MAGIC - Confirm point-in-time correctness of historical features
 # MAGIC - Confirm selected features are available at inference time
