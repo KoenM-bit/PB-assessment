@@ -153,6 +153,54 @@ button.btn-sm {
   font-size: 0.85rem;
 }
 
+.feature-skew-section {
+  margin-top: 1.5rem;
+}
+
+.feature-skew-grid {
+  display: grid;
+  gap: 1rem;
+}
+
+.feature-skew-panel {
+  background: #f8fafc;
+  border-radius: 8px;
+  padding: 1rem;
+}
+
+.feature-skew-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.feature-skew-sub {
+  margin: 0.35rem 0 0.75rem;
+  font-size: 0.85rem;
+}
+
+.feature-dual-charts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 0.75rem;
+}
+
+.feature-chart-label {
+  font-size: 0.75rem;
+  color: #64748b;
+  margin-bottom: 0.25rem;
+}
+
+.feature-trend-panel {
+  margin-top: 1.25rem;
+}
+
+.feature-trend-panel h4 {
+  margin: 0 0 0.5rem;
+}
+
 .card {
   background: white;
   border-radius: 8px;

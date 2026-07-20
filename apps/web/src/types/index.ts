@@ -131,7 +131,36 @@ export interface RequestMonitoring {
     pct_out_of_range: number;
     sample_size: number;
   }[];
+  feature_distributions: FeatureDistributionViz[];
   warnings: string[];
+}
+
+export interface FeaturePointViz {
+  index: number;
+  value: number;
+  in_range: boolean;
+  position_pct: number;
+  jitter: number;
+  day: string;
+}
+
+export interface FeatureDailyTrend {
+  date: string;
+  mean: number;
+  pct_outside: number;
+  n: number;
+}
+
+export interface FeatureDistributionViz {
+  feature: string;
+  label: string;
+  training_p01: number;
+  training_p99: number;
+  recent_mean: number;
+  pct_out_of_range: number;
+  sample_size: number;
+  points: FeaturePointViz[];
+  daily_trend: FeatureDailyTrend[];
 }
 
 export interface RecentRequestLatency {

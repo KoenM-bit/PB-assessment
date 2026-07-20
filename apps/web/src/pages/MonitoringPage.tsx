@@ -11,9 +11,11 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { FeatureSkewCharts } from "../components/FeatureSkewCharts";
 import { api } from "../api/client";
 import type { MetricSet, ModelComparison, MonitoringData } from "../types";
 import { formatCurrency, formatDate, formatDurationMs, formatPercent } from "../utils/format";
+import { formatFeatureValue } from "../utils/featureFormat";
 
 const EMPTY_LATENCY = { sample_size: 0, avg_ms: 0, p50_ms: 0, p95_ms: 0, max_ms: 0 };
 
@@ -42,6 +44,7 @@ const EMPTY_REQUEST_MONITORING: MonitoringData["request_monitoring"] = {
   by_region: [],
   by_property_type: [],
   numeric_features: [],
+  feature_distributions: [],
   warnings: [],
 };
 
@@ -338,31 +341,7 @@ export function MonitoringPage() {
               </div>
             </div>
 
-            {requests.numeric_features.length > 0 && (
-              <div className="table-wrap">
-                <h3>Numeric inputs vs training bounds</h3>
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Feature</th>
-                      <th>Recent mean</th>
-                      <th>% outside p01–p99</th>
-                      <th>n</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {requests.numeric_features.map((row) => (
-                      <tr key={row.feature}>
-                        <td>{row.feature.replace(/_/g, " ")}</td>
-                        <td>{formatFeatureValue(row.feature, row.recent_mean)}</td>
-                        <td>{row.pct_out_of_range.toFixed(1)}%</td>
-                        <td>{row.sample_size}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
+            <FeatureSkewCharts requests={requests} />
 
             {feature_monitoring.length > 0 && (
               <div className="table-wrap">
@@ -636,17 +615,4 @@ function ComparisonRow({
       <td>{format(baseline[field] as number)}</td>
     </tr>
   );
-}
-
-function formatFeatureValue(feature: string, value: number): string {
-  if (feature.includes("price") || feature.includes("surface_x")) {
-    return formatCurrency(value);
-  }
-  if (feature === "dist_to_city_centre_km") {
-    return `${value.toFixed(1)} km`;
-  }
-  if (feature === "surface_area") {
-    return `${value.toFixed(0)} m²`;
-  }
-  return value.toFixed(1);
 }
