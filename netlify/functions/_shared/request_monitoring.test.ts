@@ -67,5 +67,7 @@ describe("buildRequestMonitoring feature distributions", () => {
     expect(surface?.points[1].in_range).toBe(false);
     expect(surface?.points[1].position_pct).toBeGreaterThan(100);
     expect(surface?.daily_trend).toHaveLength(2);
+    expect(result.region_trends.length).toBeGreaterThan(0);
+    expect(result.region_trends[0].points.length).toBe(2);
   });
 });

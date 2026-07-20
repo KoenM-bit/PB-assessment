@@ -105,6 +105,21 @@ export interface CategoryShare {
   share: number;
   expected_share: number | null;
   skew_pp: number | null;
+  trend_pp: number | null;
+}
+
+export interface CategoryTrendPoint {
+  date: string;
+  share_pct: number;
+  count: number;
+}
+
+export interface CategoryTrendSeries {
+  label: string;
+  display_label: string;
+  points: CategoryTrendPoint[];
+  trend_pp: number | null;
+  current_share_pct: number;
 }
 
 export interface FeatureMonitoringRow {
@@ -124,6 +139,8 @@ export interface RequestMonitoring {
   window_label: string;
   by_region: CategoryShare[];
   by_property_type: CategoryShare[];
+  region_trends: CategoryTrendSeries[];
+  property_type_trends: CategoryTrendSeries[];
   numeric_features: {
     feature: string;
     recent_mean: number;

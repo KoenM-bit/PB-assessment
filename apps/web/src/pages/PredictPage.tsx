@@ -8,7 +8,7 @@ const PROPERTY_TYPES = ["apartment", "terraced_house", "semi_detached", "detache
 const ENERGY_LABELS = ["A++", "A+", "A", "B", "C", "D", "E", "F", "G"];
 
 const DEFAULT_FORM: PredictRequest = {
-  address: "Domstraat 12",
+  address: "Voorbeeldstraat 1",
   postcode: "3512 JC",
   surface_area: 120,
   number_of_rooms: 5,

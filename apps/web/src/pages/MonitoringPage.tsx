@@ -11,6 +11,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { CategoryShareCharts } from "../components/CategoryShareCharts";
 import { FeatureSkewCharts } from "../components/FeatureSkewCharts";
 import { api } from "../api/client";
 import type { MetricSet, ModelComparison, MonitoringData } from "../types";
@@ -43,6 +44,8 @@ const EMPTY_REQUEST_MONITORING: MonitoringData["request_monitoring"] = {
   window_label: "recent predictions",
   by_region: [],
   by_property_type: [],
+  region_trends: [],
+  property_type_trends: [],
   numeric_features: [],
   feature_distributions: [],
   warnings: [],
@@ -295,50 +298,18 @@ export function MonitoringPage() {
         ) : (
           <>
             <div className="chart-row">
-              <div className="chart-panel">
-                <h3>Share by region (%)</h3>
-                <ResponsiveContainer width="100%" height={260}>
-                  <BarChart
-                    data={requests.by_region
-                      .filter((r) => r.count > 0)
-                      .map((r) => ({
-                        region: r.label,
-                        live: Math.round(r.share * 1000) / 10,
-                        expected: r.expected_share != null ? Math.round(r.expected_share * 1000) / 10 : 0,
-                      }))}
-                  >
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="region" />
-                    <YAxis unit="%" />
-                    <Tooltip formatter={(v: number) => `${v}%`} />
-                    <Legend />
-                    <Bar dataKey="live" name="Live requests" fill="#2563eb" />
-                    <Bar dataKey="expected" name="Uniform training ref." fill="#94a3b8" />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-              <div className="chart-panel">
-                <h3>Share by property type (%)</h3>
-                <ResponsiveContainer width="100%" height={260}>
-                  <BarChart
-                    data={requests.by_property_type
-                      .filter((r) => r.count > 0)
-                      .map((r) => ({
-                        type: r.label.replace(/_/g, " "),
-                        live: Math.round(r.share * 1000) / 10,
-                        expected: r.expected_share != null ? Math.round(r.expected_share * 1000) / 10 : 0,
-                      }))}
-                  >
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="type" />
-                    <YAxis unit="%" />
-                    <Tooltip formatter={(v: number) => `${v}%`} />
-                    <Legend />
-                    <Bar dataKey="live" name="Live requests" fill="#7c3aed" />
-                    <Bar dataKey="expected" name="Uniform training ref." fill="#94a3b8" />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
+              <CategoryShareCharts
+                title="Share by region (%)"
+                shares={requests.by_region}
+                trends={requests.region_trends ?? []}
+                barNameKey="region"
+              />
+              <CategoryShareCharts
+                title="Share by property type (%)"
+                shares={requests.by_property_type}
+                trends={requests.property_type_trends ?? []}
+                barNameKey="type"
+              />
             </div>
 
             <FeatureSkewCharts requests={requests} />

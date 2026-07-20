@@ -7,6 +7,22 @@ export interface CategoryShare {
   share: number;
   expected_share: number | null;
   skew_pp: number | null;
+  /** Recent vs earlier daily share in window (percentage points). */
+  trend_pp: number | null;
+}
+
+export interface CategoryTrendPoint {
+  date: string;
+  share_pct: number;
+  count: number;
+}
+
+export interface CategoryTrendSeries {
+  label: string;
+  display_label: string;
+  points: CategoryTrendPoint[];
+  trend_pp: number | null;
+  current_share_pct: number;
 }
 
 export interface FeatureDriftRow {
@@ -52,6 +68,8 @@ export interface RequestMonitoring {
   window_label: string;
   by_region: CategoryShare[];
   by_property_type: CategoryShare[];
+  region_trends: CategoryTrendSeries[];
+  property_type_trends: CategoryTrendSeries[];
   numeric_features: FeatureDriftRow[];
   feature_distributions: FeatureDistributionViz[];
   warnings: string[];
@@ -91,8 +109,76 @@ function categoryShares(
       share,
       expected_share: expectedShare,
       skew_pp: skew_pp != null ? Math.round(skew_pp * 10) / 10 : null,
+      trend_pp: null,
     };
   });
+}
+
+function computeTrendPp(points: CategoryTrendPoint[]): number | null {
+  if (points.length < 2) return null;
+  const mid = Math.floor(points.length / 2);
+  const first = points.slice(0, mid);
+  const second = points.slice(mid);
+  const avg = (pts: CategoryTrendPoint[]) =>
+    pts.length > 0 ? pts.reduce((sum, p) => sum + p.share_pct, 0) / pts.length : 0;
+  return Math.round((avg(second) - avg(first)) * 10) / 10;
+}
+
+function buildCategoryTrendSeries(
+  window: StoredPrediction[],
+  getLabel: (p: StoredPrediction) => string,
+  knownLabels: string[],
+): CategoryTrendSeries[] {
+  const byDay = new Map<string, StoredPrediction[]>();
+  for (const p of window) {
+    const day = p.prediction_timestamp.slice(0, 10);
+    const bucket = byDay.get(day) ?? [];
+    bucket.push(p);
+    byDay.set(day, bucket);
+  }
+  const days = [...byDay.keys()].sort();
+
+  const activeLabels = [
+    ...new Set([
+      ...knownLabels,
+      ...window.map((p) => getLabel(p)),
+    ]),
+  ].filter((label) => window.some((p) => getLabel(p) === label));
+
+  return activeLabels
+    .map((label) => {
+      const points: CategoryTrendPoint[] = days.map((day) => {
+        const rows = byDay.get(day) ?? [];
+        const count = rows.filter((p) => getLabel(p) === label).length;
+        const share = rows.length > 0 ? count / rows.length : 0;
+        return {
+          date: day,
+          share_pct: Math.round(share * 1000) / 10,
+          count,
+        };
+      });
+      const total = window.filter((p) => getLabel(p) === label).length;
+      return {
+        label,
+        display_label: label.replace(/_/g, " "),
+        points,
+        trend_pp: computeTrendPp(points),
+        current_share_pct: Math.round((total / window.length) * 1000) / 10,
+      };
+    })
+    .filter((s) => s.current_share_pct > 0 || s.points.some((p) => p.count > 0))
+    .sort((a, b) => b.current_share_pct - a.current_share_pct);
+}
+
+function attachTrendsToShares(
+  shares: CategoryShare[],
+  trends: CategoryTrendSeries[],
+): CategoryShare[] {
+  const trendMap = new Map(trends.map((t) => [t.label, t.trend_pp]));
+  return shares.map((row) => ({
+    ...row,
+    trend_pp: trendMap.get(row.label) ?? null,
+  }));
 }
 
 const NUMERIC_REQUEST_FEATURES = [
@@ -212,6 +298,8 @@ export function buildRequestMonitoring(
       window_label: `last ${windowSize} predictions`,
       by_region: [],
       by_property_type: [],
+      region_trends: [],
+      property_type_trends: [],
       numeric_features: [],
       feature_distributions: [],
       warnings: ["No prediction requests logged yet — run predictions via the app or API"],
@@ -220,8 +308,21 @@ export function buildRequestMonitoring(
 
   const regions = window.map((p) => p.region || "unknown");
   const propertyTypes = window.map((p) => p.property_type || "unknown");
-  const byRegion = categoryShares(regions, manifest.regions);
-  const byPropertyType = categoryShares(propertyTypes, manifest.property_types);
+  const regionTrends = buildCategoryTrendSeries(
+    window,
+    (p) => p.region || "unknown",
+    manifest.regions,
+  );
+  const propertyTrends = buildCategoryTrendSeries(
+    window,
+    (p) => p.property_type || "unknown",
+    manifest.property_types,
+  );
+  const byRegion = attachTrendsToShares(categoryShares(regions, manifest.regions), regionTrends);
+  const byPropertyType = attachTrendsToShares(
+    categoryShares(propertyTypes, manifest.property_types),
+    propertyTrends,
+  );
 
   for (const row of byRegion) {
     if (row.skew_pp != null && Math.abs(row.skew_pp) >= 15 && row.count > 0) {
@@ -259,6 +360,8 @@ export function buildRequestMonitoring(
     window_label: `last ${window.length} logged predictions`,
     by_region: byRegion,
     by_property_type: byPropertyType,
+    region_trends: regionTrends,
+    property_type_trends: propertyTrends,
     numeric_features,
     feature_distributions,
     warnings,
