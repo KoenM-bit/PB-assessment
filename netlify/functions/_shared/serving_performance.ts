@@ -1,5 +1,6 @@
 import type { AppConfig } from "./config.js";
 import type { StoredPrediction } from "./databricks.js";
+import { isBaselineFallback } from "./databricks.js";
 
 export interface LatencySummary {
   sample_size: number;
@@ -78,7 +79,7 @@ export function dailyServingFromPredictions(predictions: StoredPrediction[]): Da
         request_count: rows.length,
         p50_ms: summary.p50_ms,
         p95_ms: summary.p95_ms,
-        fallback_count: rows.filter((r) => r.is_fallback).length,
+        fallback_count: rows.filter((r) => isBaselineFallback(r)).length,
       };
     });
 }

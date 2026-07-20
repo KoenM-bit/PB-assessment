@@ -171,6 +171,7 @@ export interface MonitoringData {
     timeout_rate: number;
     api_latency: LatencySummary;
     fallback_rate: number;
+    peer_fallback_rate: number;
     daily: DailyServingPoint[];
     history: ServingHistoryPoint[];
     databricks_endpoint: DatabricksEndpointMetrics | null;

@@ -27,6 +27,7 @@ function normalizeInfrastructure(
     timeout_rate: raw?.timeout_rate ?? 0,
     api_latency: raw?.api_latency ?? EMPTY_LATENCY,
     fallback_rate: raw?.fallback_rate ?? 0,
+    peer_fallback_rate: raw?.peer_fallback_rate ?? 0,
     daily: raw?.daily ?? [],
     history: raw?.history ?? [],
     databricks_endpoint: raw?.databricks_endpoint ?? null,
@@ -177,9 +178,13 @@ export function MonitoringPage() {
             value={formatDurationMs(infrastructure.api_latency.max_ms)}
           />
           <MetricCard
-            label="Fallback rate"
+            label="Baseline fallback rate"
             value={formatPercent(infrastructure.fallback_rate * 100)}
-            sub="peer serving or baseline"
+            sub={
+              infrastructure.peer_fallback_rate > 0
+                ? `peer serving ${formatPercent(infrastructure.peer_fallback_rate * 100)} (still ML)`
+                : "business baseline only"
+            }
           />
           <MetricCard label="Tracked requests" value={String(infrastructure.request_count)} />
         </div>
@@ -217,7 +222,7 @@ export function MonitoringPage() {
                     <Tooltip />
                     <Legend />
                     <Bar dataKey="requests" name="Predictions" fill="#2563eb" />
-                    <Bar dataKey="fallbacks" name="Fallbacks" fill="#f59e0b" />
+                    <Bar dataKey="fallbacks" name="Baseline fallbacks" fill="#f59e0b" />
                   </BarChart>
                 </ResponsiveContainer>
               </div>

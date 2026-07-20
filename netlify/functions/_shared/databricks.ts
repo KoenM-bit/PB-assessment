@@ -233,6 +233,29 @@ export async function getActualSales(config: AppConfig): Promise<StoredActualSal
   return rows.map(parseActualSaleRow);
 }
 
+function parseSqlBoolean(raw: unknown): boolean {
+  if (raw === true || raw === false) return raw;
+  if (typeof raw === "string") {
+    const value = raw.trim().toLowerCase();
+    if (value === "true" || value === "1") return true;
+    if (value === "false" || value === "0" || value === "") return false;
+  }
+  if (typeof raw === "number") return raw !== 0;
+  return false;
+}
+
+/** Business baseline only — not peer-environment ML serving. */
+export function isBaselineFallback(prediction: StoredPrediction): boolean {
+  return (
+    prediction.model_version === "baseline" ||
+    prediction.warnings.some((w) => w.includes("fallback_to_business_baseline"))
+  );
+}
+
+export function isPeerServingFallback(prediction: StoredPrediction): boolean {
+  return prediction.warnings.some((w) => w.includes("fallback_to_peer_serving"));
+}
+
 function parsePredictionRow(row: Record<string, unknown>): StoredPrediction {
   const payload = parseRequestPayload(String(row.request_payload ?? "{}"));
   const warnings = parseWarnings(row.warnings);
@@ -252,7 +275,7 @@ function parsePredictionRow(row: Record<string, unknown>): StoredPrediction {
     app_env: String(row.app_env ?? ""),
     serving_latency_ms: Number(row.serving_latency_ms ?? 0),
     warnings,
-    is_fallback: Boolean(row.is_fallback),
+    is_fallback: parseSqlBoolean(row.is_fallback),
     region: String(payload.region ?? ""),
     property_type: String(payload.property_type ?? ""),
     surface_area: Number(payload.surface_area ?? 0),

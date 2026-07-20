@@ -1,7 +1,7 @@
 import type { Handler, HandlerEvent } from "@netlify/functions";
 import { v4 as uuidv4 } from "uuid";
 import { getConfig } from "./_shared/config.js";
-import { getActualSales, getFeatureMonitoring, getPredictions, getServingMetricsHistory } from "./_shared/databricks.js";
+import { getActualSales, getFeatureMonitoring, getPredictions, getServingMetricsHistory, isBaselineFallback, isPeerServingFallback } from "./_shared/databricks.js";
 import { handleError, successResponse } from "./_shared/errors.js";
 import {
   baselinePredict,
@@ -147,7 +147,8 @@ export const handler: Handler = async (event: HandlerEvent) => {
 
     const predictionLatencies = predictions.map((p) => p.serving_latency_ms).filter((ms) => ms > 0);
     const apiLatency = summarizeLatencies(predictionLatencies);
-    const fallbackCount = predictions.filter((p) => p.is_fallback).length;
+    const baselineFallbackCount = predictions.filter((p) => isBaselineFallback(p)).length;
+    const peerFallbackCount = predictions.filter((p) => isPeerServingFallback(p)).length;
     const dailyFromPredictions = dailyServingFromPredictions(predictions);
 
     const endpointRequestTotal = endpointMetrics?.request_count_total ?? 0;
@@ -238,7 +239,9 @@ export const handler: Handler = async (event: HandlerEvent) => {
               : 0,
           api_latency: apiLatency,
           fallback_rate:
-            predictions.length > 0 ? fallbackCount / predictions.length : 0,
+            predictions.length > 0 ? baselineFallbackCount / predictions.length : 0,
+          peer_fallback_rate:
+            predictions.length > 0 ? peerFallbackCount / predictions.length : 0,
           daily: dailyFromPredictions,
           history: historyChart,
           databricks_endpoint: endpointMetrics,
