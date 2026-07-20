@@ -12,6 +12,7 @@ import {
 import {
   dailyServingFromPredictions,
   fetchDatabricksEndpointMetrics,
+  recentRequestLatencies,
   summarizeLatencies,
 } from "./_shared/serving_performance.js";
 import { buildRequestMonitoring } from "./_shared/request_monitoring.js";
@@ -244,6 +245,7 @@ export const handler: Handler = async (event: HandlerEvent) => {
             predictions.length > 0 ? peerFallbackCount / predictions.length : 0,
           daily: dailyFromPredictions,
           history: historyChart,
+          recent_requests: recentRequestLatencies(predictions, 5),
           databricks_endpoint: endpointMetrics,
           serving_endpoint: config.servingEndpoint,
         },

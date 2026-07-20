@@ -148,6 +148,11 @@ button.btn-sm {
   margin-top: 0;
 }
 
+.chart-panel .chart-caption {
+  margin: 0 0 0.75rem;
+  font-size: 0.85rem;
+}
+
 .card {
   background: white;
   border-radius: 8px;

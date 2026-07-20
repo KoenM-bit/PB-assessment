@@ -134,6 +134,14 @@ export interface RequestMonitoring {
   warnings: string[];
 }
 
+export interface RecentRequestLatency {
+  prediction_id: string;
+  timestamp: string;
+  latency_ms: number;
+  model_version: string;
+  serving_route: "primary" | "peer" | "baseline";
+}
+
 export interface MonitoringData {
   summary: {
     total_predictions: number;
@@ -175,6 +183,7 @@ export interface MonitoringData {
     peer_fallback_rate: number;
     daily: DailyServingPoint[];
     history: ServingHistoryPoint[];
+    recent_requests: RecentRequestLatency[];
     databricks_endpoint: DatabricksEndpointMetrics | null;
     serving_endpoint: string;
   };

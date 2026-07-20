@@ -30,6 +30,7 @@ function normalizeInfrastructure(
     peer_fallback_rate: raw?.peer_fallback_rate ?? 0,
     daily: raw?.daily ?? [],
     history: raw?.history ?? [],
+    recent_requests: raw?.recent_requests ?? [],
     databricks_endpoint: raw?.databricks_endpoint ?? null,
     serving_endpoint: raw?.serving_endpoint ?? servingEndpointFallback,
   };
@@ -143,12 +144,20 @@ export function MonitoringPage() {
               <MetricCard
                 label="Serving latency p50"
                 value={formatDurationMs(endpoint.latency_p50_ms)}
-                sub="inside Databricks"
+                sub={
+                  endpoint.latency_p50_ms != null
+                    ? "inside Databricks"
+                    : "not in metrics export"
+                }
               />
               <MetricCard
                 label="Serving latency p99"
                 value={formatDurationMs(endpoint.latency_p99_ms)}
-                sub="inside Databricks"
+                sub={
+                  endpoint.latency_p99_ms != null
+                    ? "inside Databricks"
+                    : "not in metrics export"
+                }
               />
               <MetricCard
                 label="CPU usage"
@@ -197,10 +206,48 @@ export function MonitoringPage() {
           </p>
         )}
 
+        {infrastructure.recent_requests.length > 0 && (
+          <div className="table-wrap">
+            <h3>Last {infrastructure.recent_requests.length} API requests (end-to-end latency)</h3>
+            <p className="muted">
+              Per prediction stored in Databricks — same source as the trend chart below (not Databricks endpoint p50/p99).
+            </p>
+            <table>
+              <thead>
+                <tr>
+                  <th>Time</th>
+                  <th>Latency</th>
+                  <th>Model</th>
+                  <th>Route</th>
+                  <th>Prediction ID</th>
+                </tr>
+              </thead>
+              <tbody>
+                {infrastructure.recent_requests.map((row) => (
+                  <tr key={row.prediction_id}>
+                    <td>{formatDate(row.timestamp)}</td>
+                    <td>{formatDurationMs(row.latency_ms)}</td>
+                    <td>{row.model_version}</td>
+                    <td>
+                      <span className={`badge ${row.serving_route === "primary" ? "" : "badge-warning"}`}>
+                        {row.serving_route}
+                      </span>
+                    </td>
+                    <td className="muted">{row.prediction_id.slice(0, 8)}…</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
         {latencyHistory.length > 0 && (
           <div className="chart-row">
             <div className="chart-panel">
-              <h3>Latency trend (p50 / p95)</h3>
+              <h3>Daily API latency (p50 / p95)</h3>
+              <p className="muted chart-caption">
+                Aggregated from <code>gold.predictions.serving_latency_ms</code> per day.
+              </p>
               <ResponsiveContainer width="100%" height={240}>
                 <LineChart data={latencyHistory}>
                   <CartesianGrid strokeDasharray="3 3" />

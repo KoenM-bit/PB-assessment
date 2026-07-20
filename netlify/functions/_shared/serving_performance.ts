@@ -1,6 +1,6 @@
 import type { AppConfig } from "./config.js";
 import type { StoredPrediction } from "./databricks.js";
-import { isBaselineFallback } from "./databricks.js";
+import { isBaselineFallback, isPeerServingFallback } from "./databricks.js";
 
 export interface LatencySummary {
   sample_size: number;
@@ -40,6 +40,14 @@ export interface ServingMetricsRow {
   timeout_count: number;
   p50_latency_ms: number;
   p95_latency_ms: number;
+}
+
+export interface RecentRequestLatency {
+  prediction_id: string;
+  timestamp: string;
+  latency_ms: number;
+  model_version: string;
+  serving_route: "primary" | "peer" | "baseline";
 }
 
 function percentile(sorted: number[], p: number): number {
@@ -85,6 +93,23 @@ export function dailyServingFromPredictions(predictions: StoredPrediction[]): Da
         fallback_count: rows.filter((r) => isBaselineFallback(r)).length,
       };
     });
+}
+
+export function recentRequestLatencies(
+  predictions: StoredPrediction[],
+  limit = 5,
+): RecentRequestLatency[] {
+  return predictions.slice(0, limit).map((p) => ({
+    prediction_id: p.prediction_id,
+    timestamp: p.prediction_timestamp,
+    latency_ms: p.serving_latency_ms,
+    model_version: p.model_version,
+    serving_route: isBaselineFallback(p)
+      ? "baseline"
+      : isPeerServingFallback(p)
+        ? "peer"
+        : "primary",
+  }));
 }
 
 function parseMetricValue(raw: string): number {
