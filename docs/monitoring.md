@@ -73,6 +73,16 @@ Databricks job `evaluate_model` (scheduled daily):
 2. Compute overall and segmented metrics
 3. Append to `gold.model_evaluations`
 
+## Serving Metrics Workflow
+
+Databricks job `serving_metrics` (scheduled daily at 06:45 Europe/Amsterdam):
+1. Read `gold.predictions` (successful API calls with latency)
+2. Read `gold.serving_events` (failed `/api/predict` calls logged by Netlify)
+3. Compute per-day request count, error/timeout counts, p50/p95 latency
+4. Upsert into `gold.serving_metrics`
+
+Failed predict requests are written to `gold.serving_events` from the Netlify function (HTTP status, error code, latency, timeout flag).
+
 ## Feature Monitoring Workflow
 
 Databricks job `feature_monitoring` (scheduled daily):
@@ -83,7 +93,13 @@ Databricks job `feature_monitoring` (scheduled daily):
 ## Dashboard
 
 The monitoring page displays:
+- Databricks serving & API performance (latency percentiles, CPU/memory, request volume)
 - Summary cards (predictions, labelled count, MAE, RMSE, bias)
 - MAE by region and property type (bar charts)
 - Active model version
 - Warnings for low sample sizes
+
+Serving latency is sourced from:
+- Databricks `/api/2.0/serving-endpoints/{name}/metrics` (p50/p99 inside the endpoint)
+- `gold.predictions.serving_latency_ms` (end-to-end API path, last 500 rows)
+- Optional daily rollups in `gold.serving_metrics` when populated by jobs

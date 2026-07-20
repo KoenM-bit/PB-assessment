@@ -4,6 +4,8 @@ import {
   BarChart,
   CartesianGrid,
   Legend,
+  Line,
+  LineChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -11,7 +13,7 @@ import {
 } from "recharts";
 import { api } from "../api/client";
 import type { MetricSet, ModelComparison, MonitoringData } from "../types";
-import { formatCurrency, formatDate, formatPercent } from "../utils/format";
+import { formatCurrency, formatDate, formatDurationMs, formatPercent } from "../utils/format";
 
 export function MonitoringPage() {
   const [data, setData] = useState<MonitoringData | null>(null);
@@ -29,7 +31,7 @@ export function MonitoringPage() {
   if (error) return <div className="error">{error}</div>;
   if (!data) return null;
 
-  const { summary, training, holdout_evaluation, live_evaluation, performance, data_quality, prediction_distribution, warnings } = data;
+  const { summary, training, holdout_evaluation, live_evaluation, performance, data_quality, prediction_distribution, warnings, infrastructure } = data;
 
   const holdoutChartData = [
     {
@@ -61,11 +63,124 @@ export function MonitoringPage() {
     sample_size: m.sample_size,
   }));
 
+  const latencyHistory = infrastructure.history.map((row) => ({
+    ...row,
+    label: row.date.slice(5),
+  }));
+
+  const dailyVolume = infrastructure.daily.map((row) => ({
+    date: row.date.slice(5),
+    requests: row.request_count,
+    fallbacks: row.fallback_count,
+  }));
+
+  const endpoint = infrastructure.databricks_endpoint;
+
   return (
     <>
       {warnings.map((w) => (
         <div key={w} className="warning badge-warning">{w}</div>
       ))}
+
+      <div className="card">
+        <h2>Databricks &amp; API Performance</h2>
+        <p className="muted">
+          Live metrics from endpoint{" "}
+          <span className="badge">{infrastructure.serving_endpoint}</span>
+          {endpoint?.available
+            ? " (Databricks metrics API)"
+            : " — endpoint metrics unavailable; showing stored prediction latencies from gold.predictions"}
+        </p>
+
+        <div className="metrics-grid">
+          {endpoint?.available && (
+            <>
+              <MetricCard
+                label="Endpoint requests (total)"
+                value={String(endpoint.request_count_total)}
+              />
+              <MetricCard
+                label="Serving latency p50"
+                value={formatDurationMs(endpoint.latency_p50_ms)}
+                sub="inside Databricks"
+              />
+              <MetricCard
+                label="Serving latency p99"
+                value={formatDurationMs(endpoint.latency_p99_ms)}
+                sub="inside Databricks"
+              />
+              <MetricCard
+                label="CPU usage"
+                value={endpoint.cpu_usage_pct != null ? `${endpoint.cpu_usage_pct}%` : "—"}
+              />
+              <MetricCard
+                label="Memory usage"
+                value={endpoint.memory_usage_pct != null ? `${endpoint.memory_usage_pct}%` : "—"}
+              />
+              <MetricCard
+                label="4xx / 5xx errors"
+                value={`${endpoint.error_4xx_total} / ${endpoint.error_5xx_total}`}
+                sub={`error rate ${formatPercent(infrastructure.error_rate * 100)}`}
+              />
+            </>
+          )}
+          <MetricCard
+            label="API latency p50"
+            value={formatDurationMs(infrastructure.api_latency.p50_ms)}
+            sub={`n=${infrastructure.api_latency.sample_size} recent predictions`}
+          />
+          <MetricCard
+            label="API latency p95"
+            value={formatDurationMs(infrastructure.api_latency.p95_ms)}
+            sub={`avg ${formatDurationMs(infrastructure.api_latency.avg_ms)}`}
+          />
+          <MetricCard
+            label="Max API latency"
+            value={formatDurationMs(infrastructure.api_latency.max_ms)}
+          />
+          <MetricCard
+            label="Fallback rate"
+            value={formatPercent(infrastructure.fallback_rate * 100)}
+            sub="peer serving or baseline"
+          />
+          <MetricCard label="Tracked requests" value={String(infrastructure.request_count)} />
+        </div>
+
+        {latencyHistory.length > 0 && (
+          <div className="chart-row">
+            <div className="chart-panel">
+              <h3>Latency trend (p50 / p95)</h3>
+              <ResponsiveContainer width="100%" height={240}>
+                <LineChart data={latencyHistory}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="label" />
+                  <YAxis tickFormatter={(v) => `${v} ms`} />
+                  <Tooltip formatter={(v: number) => formatDurationMs(v)} />
+                  <Legend />
+                  <Line type="monotone" dataKey="p50_ms" name="p50" stroke="#2563eb" strokeWidth={2} dot={false} />
+                  <Line type="monotone" dataKey="p95_ms" name="p95" stroke="#7c3aed" strokeWidth={2} dot={false} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+            {dailyVolume.length > 0 && (
+              <div className="chart-panel">
+                <h3>Request volume</h3>
+                <ResponsiveContainer width="100%" height={240}>
+                  <BarChart data={dailyVolume}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="date" />
+                    <YAxis allowDecimals={false} />
+                    <Tooltip />
+                    <Legend />
+                    <Bar dataKey="requests" name="Predictions" fill="#2563eb" />
+                    <Bar dataKey="fallbacks" name="Fallbacks" fill="#f59e0b" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
 
       <div className="card">
         <h2>Training Data Specs</h2>

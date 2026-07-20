@@ -61,6 +61,43 @@ export interface ModelComparison {
   is_reliable?: boolean;
 }
 
+export interface LatencySummary {
+  sample_size: number;
+  avg_ms: number;
+  p50_ms: number;
+  p95_ms: number;
+  max_ms: number;
+}
+
+export interface DailyServingPoint {
+  date: string;
+  request_count: number;
+  p50_ms: number;
+  p95_ms: number;
+  fallback_count: number;
+}
+
+export interface DatabricksEndpointMetrics {
+  endpoint_name: string;
+  available: boolean;
+  request_count_total: number;
+  error_4xx_total: number;
+  error_5xx_total: number;
+  latency_p50_ms: number | null;
+  latency_p99_ms: number | null;
+  cpu_usage_pct: number | null;
+  memory_usage_pct: number | null;
+}
+
+export interface ServingHistoryPoint {
+  date: string;
+  request_count: number;
+  p50_ms: number;
+  p95_ms: number;
+  error_count: number;
+  timeout_count: number;
+}
+
 export interface MonitoringData {
   summary: {
     total_predictions: number;
@@ -93,7 +130,17 @@ export interface MonitoringData {
     by_region: Record<string, { mae: number; rmse: number; bias: number; sample_size: number }>;
     by_property_type: Record<string, { mae: number; rmse: number; bias: number; sample_size: number }>;
   };
-  infrastructure: { request_count: number; error_rate: number; timeout_rate: number };
+  infrastructure: {
+    request_count: number;
+    error_rate: number;
+    timeout_rate: number;
+    api_latency: LatencySummary;
+    fallback_rate: number;
+    daily: DailyServingPoint[];
+    history: ServingHistoryPoint[];
+    databricks_endpoint: DatabricksEndpointMetrics | null;
+    serving_endpoint: string;
+  };
   data_quality: { missing_value_rate: number; out_of_range_rate: number };
   prediction_distribution: { mean: number; count: number };
   warnings: string[];

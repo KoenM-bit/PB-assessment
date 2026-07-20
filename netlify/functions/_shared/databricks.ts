@@ -16,6 +16,16 @@ export interface StoredPrediction extends PredictionResponse {
   surface_area: number;
 }
 
+export interface StoredServingEvent {
+  event_id: string;
+  event_timestamp: string;
+  app_env: string;
+  http_status: number;
+  error_code: string;
+  latency_ms: number;
+  is_timeout: boolean;
+}
+
 export interface StoredActualSale {
   actual_sale_id: string;
   prediction_id: string;
@@ -121,6 +131,45 @@ export async function getPredictionById(
      LIMIT 1`,
   );
   return rows[0] ? parsePredictionRow(rows[0]) : undefined;
+}
+
+export async function getServingMetricsHistory(
+  config: AppConfig,
+  limit = 30,
+): Promise<
+  {
+    date: string;
+    request_count: number;
+    error_count: number;
+    timeout_count: number;
+    p50_latency_ms: number;
+    p95_latency_ms: number;
+  }[]
+> {
+  if (config.useMockDatabricks) {
+    return [];
+  }
+
+  try {
+    const rows = await querySql(
+      config,
+      `SELECT date, request_count, error_count, timeout_count, p50_latency_ms, p95_latency_ms
+       FROM ${config.catalog}.gold.serving_metrics
+       ORDER BY date DESC
+       LIMIT ${limit}`,
+    );
+    return rows.map((row) => ({
+      date: String(row.date).slice(0, 10),
+      request_count: Number(row.request_count ?? 0),
+      error_count: Number(row.error_count ?? 0),
+      timeout_count: Number(row.timeout_count ?? 0),
+      p50_latency_ms: Number(row.p50_latency_ms ?? 0),
+      p95_latency_ms: Number(row.p95_latency_ms ?? 0),
+    }));
+  } catch (err) {
+    console.warn("gold.serving_metrics not available:", err);
+    return [];
+  }
 }
 
 export async function getActualSales(config: AppConfig): Promise<StoredActualSale[]> {
@@ -437,6 +486,37 @@ export function insertPredictionSql(config: AppConfig, record: StoredPrediction)
     array(${warnings}),
     ${record.is_fallback}
   )`;
+}
+
+export function insertServingEventSql(config: AppConfig, record: StoredServingEvent): string {
+  return `INSERT INTO ${config.catalog}.gold.serving_events (
+    event_id,
+    event_timestamp,
+    app_env,
+    http_status,
+    error_code,
+    latency_ms,
+    is_timeout
+  ) VALUES (
+    '${escapeSql(record.event_id)}',
+    '${escapeSql(record.event_timestamp)}',
+    '${escapeSql(record.app_env)}',
+    ${record.http_status},
+    '${escapeSql(record.error_code)}',
+    ${record.latency_ms},
+    ${record.is_timeout}
+  )`;
+}
+
+export async function logServingEvent(config: AppConfig, record: StoredServingEvent): Promise<void> {
+  if (config.useMockDatabricks) {
+    return;
+  }
+  try {
+    await executeSqlWithRetry(config, insertServingEventSql(config, record));
+  } catch (err) {
+    console.error("Failed to persist serving event to Databricks:", err);
+  }
 }
 
 export function insertActualSaleSql(config: AppConfig, record: StoredActualSale): string {

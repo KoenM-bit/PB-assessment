@@ -106,7 +106,11 @@ Training vs recent feature distributions.
 
 ### `gold.serving_metrics`
 
-API latency, errors, timeouts.
+Daily rollups: API latency (p50/p95), successful request count, errors, timeouts.
+
+### `gold.serving_events`
+
+Failed `/api/predict` requests (validation errors, timeouts, serving failures) for error-rate rollups.
 
 ## Feature Ownership
 

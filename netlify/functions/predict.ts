@@ -1,10 +1,12 @@
 import type { Handler, HandlerEvent } from "@netlify/functions";
 import { v4 as uuidv4 } from "uuid";
 import { getConfig } from "./_shared/config.js";
+import type { AppConfig } from "./_shared/config.js";
 import {
   executeSqlWithRetry,
   insertPredictionSql,
   logPrediction,
+  logServingEvent,
   newPredictionId,
   warmSqlWarehouse,
 } from "./_shared/databricks.js";
@@ -12,12 +14,40 @@ import { ApiError, handleError, successResponse } from "./_shared/errors.js";
 import { predictWithFallback } from "./_shared/fallback.js";
 import { buildPropertyKey, predictRequestSchema } from "./_shared/schemas.js";
 
+async function recordFailedRequest(
+  config: AppConfig,
+  err: unknown,
+  latencyMs: number,
+): Promise<void> {
+  const apiErr =
+    err instanceof ApiError
+      ? err
+      : err instanceof Error && err.name === "AbortError"
+        ? new ApiError(504, "TIMEOUT", "Serving endpoint timed out")
+        : new ApiError(500, "INTERNAL_ERROR", "An unexpected error occurred");
+
+  await logServingEvent(config, {
+    event_id: uuidv4(),
+    event_timestamp: new Date().toISOString(),
+    app_env: config.appEnv,
+    http_status: apiErr.statusCode,
+    error_code: apiErr.code,
+    latency_ms: latencyMs,
+    is_timeout: apiErr.code === "TIMEOUT" || apiErr.statusCode === 504,
+  });
+}
+
 export const handler: Handler = async (event: HandlerEvent) => {
   const requestId = uuidv4();
+  const start = Date.now();
+  let config: AppConfig | null = null;
+
   try {
     if (event.httpMethod !== "POST") {
       throw new ApiError(405, "METHOD_NOT_ALLOWED", "POST required");
     }
+
+    config = getConfig();
 
     const body = JSON.parse(event.body || "{}");
     const parsed = predictRequestSchema.safeParse(body);
@@ -25,8 +55,6 @@ export const handler: Handler = async (event: HandlerEvent) => {
       throw new ApiError(400, "VALIDATION_ERROR", parsed.error.message);
     }
 
-    const config = getConfig();
-    const start = Date.now();
     const warehouseWarmup = config.useMockDatabricks
       ? Promise.resolve()
       : warmSqlWarehouse(config).catch((err) => {
@@ -83,6 +111,10 @@ export const handler: Handler = async (event: HandlerEvent) => {
       requestId,
     );
   } catch (err) {
+    const latency = Date.now() - start;
+    if (config && !config.useMockDatabricks) {
+      await recordFailedRequest(config, err, latency);
+    }
     if (err instanceof Error && err.name === "AbortError") {
       return handleError(new ApiError(504, "TIMEOUT", "Serving endpoint timed out"), requestId);
     }

@@ -184,6 +184,28 @@ resources:
               catalog: ${var.catalog}
               wheel_path: ${var.ml_wheel_path}
 
+    serving_metrics:
+      name: "[${bundle.target}] Serving Metrics Rollup"
+      schedule:
+        quartz_cron_expression: "0 45 6 * * ?"
+        timezone_id: "Europe/Amsterdam"
+      environments:
+        - environment_key: serverless
+          spec:
+            client: "2"
+            dependencies:
+              - ${var.ml_wheel_path}
+      tasks:
+        - task_key: serving_metrics
+          environment_key: serverless
+          notebook_task:
+            notebook_path: ./notebooks/08_serving_metrics.py
+            base_parameters:
+              catalog: ${var.catalog}
+              wheel_path: ${var.ml_wheel_path}
+              timeout_ms: "30000"
+              lookback_days: "90"
+
     full_ml_pipeline:
       name: "[${bundle.target}] Full ML Pipeline"
       parameters: *train_job_parameters

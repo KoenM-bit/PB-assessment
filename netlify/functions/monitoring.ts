@@ -1,7 +1,7 @@
 import type { Handler, HandlerEvent } from "@netlify/functions";
 import { v4 as uuidv4 } from "uuid";
 import { getConfig } from "./_shared/config.js";
-import { getActualSales, getPredictions } from "./_shared/databricks.js";
+import { getActualSales, getPredictions, getServingMetricsHistory } from "./_shared/databricks.js";
 import { handleError, successResponse } from "./_shared/errors.js";
 import {
   baselinePredict,
@@ -9,6 +9,11 @@ import {
   type MetricSet,
   type TrainingManifest,
 } from "./_shared/training_manifest.js";
+import {
+  dailyServingFromPredictions,
+  fetchDatabricksEndpointMetrics,
+  summarizeLatencies,
+} from "./_shared/serving_performance.js";
 
 function computeMetrics(
   items: { predicted: number; actual: number }[],
@@ -79,8 +84,12 @@ export const handler: Handler = async (event: HandlerEvent) => {
   try {
     const config = getConfig();
     const manifest = loadTrainingManifest();
-    const predictions = await getPredictions(config, 500);
-    const actuals = await getActualSales(config);
+    const [predictions, actuals, endpointMetrics, servingMetricsHistory] = await Promise.all([
+      getPredictions(config, 500),
+      getActualSales(config),
+      fetchDatabricksEndpointMetrics(config),
+      getServingMetricsHistory(config, 30),
+    ]);
     const actualMap = new Map(actuals.map((a) => [a.prediction_id, a]));
 
     const labelled = predictions
@@ -133,6 +142,43 @@ export const handler: Handler = async (event: HandlerEvent) => {
       );
     }
 
+    const predictionLatencies = predictions.map((p) => p.serving_latency_ms).filter((ms) => ms > 0);
+    const apiLatency = summarizeLatencies(predictionLatencies);
+    const fallbackCount = predictions.filter((p) => p.is_fallback).length;
+    const dailyFromPredictions = dailyServingFromPredictions(predictions);
+
+    const endpointRequestTotal = endpointMetrics?.request_count_total ?? 0;
+    const endpointErrors = (endpointMetrics?.error_4xx_total ?? 0) + (endpointMetrics?.error_5xx_total ?? 0);
+    const rolledRequestCount = servingMetricsHistory.reduce((sum, row) => sum + row.request_count, 0);
+    const rolledErrorCount = servingMetricsHistory.reduce((sum, row) => sum + row.error_count, 0);
+    const errorRate =
+      servingMetricsHistory.length > 0 && rolledRequestCount + rolledErrorCount > 0
+        ? rolledErrorCount / (rolledRequestCount + rolledErrorCount)
+        : endpointRequestTotal > 0
+          ? endpointErrors / endpointRequestTotal
+          : 0;
+
+    const historyChart =
+      servingMetricsHistory.length > 0
+        ? [...servingMetricsHistory]
+            .sort((a, b) => a.date.localeCompare(b.date))
+            .map((row) => ({
+              date: row.date,
+              request_count: row.request_count,
+              p50_ms: Math.round(row.p50_latency_ms),
+              p95_ms: Math.round(row.p95_latency_ms),
+              error_count: row.error_count,
+              timeout_count: row.timeout_count,
+            }))
+        : dailyFromPredictions.map((row) => ({
+            date: row.date,
+            request_count: row.request_count,
+            p50_ms: row.p50_ms,
+            p95_ms: row.p95_ms,
+            error_count: 0,
+            timeout_count: 0,
+          }));
+
     return successResponse(
       {
         summary: {
@@ -168,8 +214,22 @@ export const handler: Handler = async (event: HandlerEvent) => {
         },
         infrastructure: {
           request_count: predictions.length,
-          error_rate: 0,
-          timeout_rate: 0,
+          error_rate: Math.round(errorRate * 1000) / 1000,
+          timeout_rate:
+            servingMetricsHistory.length > 0
+              ? servingMetricsHistory.reduce((sum, row) => sum + row.timeout_count, 0) /
+                Math.max(
+                  servingMetricsHistory.reduce((sum, row) => sum + row.request_count, 0),
+                  1,
+                )
+              : 0,
+          api_latency: apiLatency,
+          fallback_rate:
+            predictions.length > 0 ? fallbackCount / predictions.length : 0,
+          daily: dailyFromPredictions,
+          history: historyChart,
+          databricks_endpoint: endpointMetrics,
+          serving_endpoint: config.servingEndpoint,
         },
         data_quality: {
           missing_value_rate: 0,

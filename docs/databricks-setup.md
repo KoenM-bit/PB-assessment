@@ -206,6 +206,7 @@ databricks bundle deploy -t staging
 Or run notebooks manually:
 - `05_evaluate_model` — retrospective metrics
 - `06_feature_monitoring` — feature drift
+- `08_serving_metrics` — daily serving latency / error rollups
 
 ---
 

@@ -88,3 +88,14 @@ CREATE TABLE IF NOT EXISTS ${catalog}.gold.serving_metrics (
     p95_latency_ms DOUBLE
 )
 USING DELTA;
+
+CREATE TABLE IF NOT EXISTS ${catalog}.gold.serving_events (
+    event_id STRING NOT NULL,
+    event_timestamp TIMESTAMP,
+    app_env STRING,
+    http_status INT,
+    error_code STRING,
+    latency_ms INT,
+    is_timeout BOOLEAN
+)
+USING DELTA;
