@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import type { LiveLabelledSale } from "../types";
-import { formatCurrency, formatDate } from "../utils/format";
+import { formatCurrency, formatDate, formatEuroK, improvementEur } from "../utils/format";
+import { computeLiveSalesHeadToHead } from "../utils/liveSalesHeadToHead";
 
 const REGION_ICON = "📍";
 
@@ -40,6 +41,8 @@ export function LiveLabelledSalesTable({ items }: Props) {
       return true;
     });
   }, [items, regionFilter, typeFilter]);
+
+  const headToHead = useMemo(() => computeLiveSalesHeadToHead(filtered), [filtered]);
 
   const toggleRegion = (region: string) => {
     setRegionFilter((current) => (current === region ? null : region));
@@ -115,10 +118,49 @@ export function LiveLabelledSalesTable({ items }: Props) {
 
       <p className="muted filter-result-count">
         Showing {filtered.length} of {items.length} sales
+        {headToHead.ties > 0 ? ` (${headToHead.ties} tie${headToHead.ties === 1 ? "" : "s"} excluded from win %)` : ""}
       </p>
+
+      <div className="live-head-to-head metrics-grid" aria-live="polite">
+        <div className="metric-card live-h2h-card live-h2h-model">
+          <div className="metric-value">{headToHead.sample_size > 0 ? `${headToHead.model_better_pct}%` : "—"}</div>
+          <div className="metric-label">Model beter</div>
+          {headToHead.sample_size > 0 && (
+            <div className="metric-label muted-small">{headToHead.model_wins} van {headToHead.sample_size - headToHead.ties}</div>
+          )}
+        </div>
+        <div className="metric-card live-h2h-card live-h2h-baseline">
+          <div className="metric-value">{headToHead.sample_size > 0 ? `${headToHead.baseline_better_pct}%` : "—"}</div>
+          <div className="metric-label">Baseline beter</div>
+          {headToHead.sample_size > 0 && (
+            <div className="metric-label muted-small">{headToHead.baseline_wins} van {headToHead.sample_size - headToHead.ties}</div>
+          )}
+        </div>
+        <div className="metric-card live-h2h-card">
+          <div className="metric-value trend-badge up">
+            {headToHead.avg_win_when_model_better_eur != null
+              ? formatCurrency(headToHead.avg_win_when_model_better_eur)
+              : "—"}
+          </div>
+          <div className="metric-label">Gem. winst als model wint</div>
+          <div className="metric-label muted-small">lagere |fout| t.o.v. baseline</div>
+        </div>
+        <div className="metric-card live-h2h-card">
+          <div className="metric-value trend-badge down">
+            {headToHead.avg_loss_when_baseline_better_eur != null
+              ? formatCurrency(headToHead.avg_loss_when_baseline_better_eur)
+              : "—"}
+          </div>
+          <div className="metric-label">Gem. verlies als baseline wint</div>
+          <div className="metric-label muted-small">extra |fout| t.o.v. baseline</div>
+        </div>
+      </div>
 
       <div className="table-wrap">
         <table className="live-sales-table">
+          <caption className="live-sales-caption">
+            Improvement = Baseline error − Model error (positief = model heeft lagere absolute fout)
+          </caption>
           <thead>
             <tr>
               <th>Address</th>
@@ -126,18 +168,20 @@ export function LiveLabelledSalesTable({ items }: Props) {
               <th>Type</th>
               <th>m²</th>
               <th>Predicted</th>
-              <th>Baseline</th>
-              <th>Actual</th>
-              <th>Model |err|</th>
-              <th>Baseline |err|</th>
-              <th>% err</th>
-              <th>vs baseline</th>
+              <th className="live-sales-metric-col">Actual</th>
+              <th className="live-sales-metric-col">Model err</th>
+              <th className="live-sales-metric-col">Baseline err</th>
+              <th className="live-sales-metric-col">Δ Improvement</th>
               <th>Pred. date</th>
               <th>Sale date</th>
             </tr>
           </thead>
           <tbody>
-            {filtered.map((row) => (
+            {filtered.map((row) => {
+              const delta = improvementEur(row.baseline_abs_error, row.model_abs_error);
+              const deltaClass =
+                delta > 0 ? "delta-improvement positive" : delta < 0 ? "delta-improvement negative" : "delta-improvement";
+              return (
               <tr key={row.prediction_id}>
                 <td>{row.address}</td>
                 <td>
@@ -154,22 +198,17 @@ export function LiveLabelledSalesTable({ items }: Props) {
                 </td>
                 <td>{row.surface_area}</td>
                 <td>{formatCurrency(row.predicted_price)}</td>
-                <td>{formatCurrency(row.baseline_price)}</td>
-                <td>{formatCurrency(row.actual_sale_price)}</td>
-                <td>{formatCurrency(row.model_abs_error)}</td>
-                <td>{formatCurrency(row.baseline_abs_error)}</td>
-                <td>{row.model_pct_error.toFixed(1)}%</td>
-                <td>
-                  {row.beats_baseline ? (
-                    <span className="trend-badge up">✓ model</span>
-                  ) : (
-                    <span className="trend-badge down">baseline</span>
-                  )}
+                <td className="live-sales-metric-col">{formatEuroK(row.actual_sale_price)}</td>
+                <td className="live-sales-metric-col">{formatEuroK(row.model_abs_error)}</td>
+                <td className="live-sales-metric-col">{formatEuroK(row.baseline_abs_error)}</td>
+                <td className={`live-sales-metric-col ${deltaClass}`} title={formatCurrency(delta)}>
+                  {formatEuroK(delta, true)}
                 </td>
                 <td>{formatDate(row.prediction_date)}</td>
                 <td>{row.sale_date ? formatDate(row.sale_date) : "—"}</td>
               </tr>
-            ))}
+            );
+            })}
           </tbody>
         </table>
       </div>

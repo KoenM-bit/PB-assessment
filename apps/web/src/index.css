@@ -302,6 +302,52 @@ button.btn-sm {
   margin-top: 1.5rem;
 }
 
+.live-head-to-head {
+  margin-bottom: 1.25rem;
+}
+
+.live-h2h-card .metric-value {
+  font-size: 1.35rem;
+}
+
+.live-h2h-model .metric-value {
+  color: #15803d;
+}
+
+.live-h2h-baseline .metric-value {
+  color: #b45309;
+}
+
+.muted-small {
+  font-size: 0.7rem !important;
+  margin-top: 0.15rem !important;
+}
+
+.live-sales-caption {
+  caption-side: bottom;
+  text-align: left;
+  font-size: 0.8rem;
+  color: #64748b;
+  padding: 0.5rem 0 0;
+}
+
+.live-sales-metric-col {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.delta-improvement {
+  font-weight: 600;
+}
+
+.delta-improvement.positive {
+  color: #15803d;
+}
+
+.delta-improvement.negative {
+  color: #dc2626;
+}
+
 .cell-with-icon {
   display: inline-flex;
   align-items: center;
