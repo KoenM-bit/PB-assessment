@@ -16,6 +16,7 @@ import {
   summarizeLatencies,
 } from "./_shared/serving_performance.js";
 import { buildRequestMonitoring } from "./_shared/request_monitoring.js";
+import { buildLiveLabelledMonitoring } from "./_shared/live_evaluation_monitoring.js";
 
 function computeMetrics(
   items: { predicted: number; actual: number }[],
@@ -98,13 +99,23 @@ export const handler: Handler = async (event: HandlerEvent) => {
 
     const labelled = predictions
       .filter((p) => actualMap.has(p.prediction_id))
-      .map((p) => ({
-        predicted: p.predicted_price,
-        actual: actualMap.get(p.prediction_id)!.actual_sale_price,
-        baseline: baselinePredict(p.region, p.property_type, p.surface_area, manifest),
-        region: p.region,
-        property_type: p.property_type,
-      }));
+      .map((p) => {
+        const actual = actualMap.get(p.prediction_id)!;
+        return {
+          predicted: p.predicted_price,
+          actual: actual.actual_sale_price,
+          baseline: baselinePredict(p.region, p.property_type, p.surface_area, manifest),
+          region: p.region,
+          property_type: p.property_type,
+          prediction_id: p.prediction_id,
+          address: p.address,
+          surface_area: p.surface_area,
+          prediction_timestamp: p.prediction_timestamp,
+          sale_date: actual.sale_date ?? null,
+        };
+      });
+
+    const liveLabelledMonitoring = buildLiveLabelledMonitoring(labelled);
 
     const liveOverall = buildLiveComparison(labelled, config.minEvaluationSampleSize);
 
@@ -263,6 +274,7 @@ export const handler: Handler = async (event: HandlerEvent) => {
         },
         feature_monitoring: featureRows,
         request_monitoring: requestMonitoring,
+        live_labelled_sales: liveLabelledMonitoring,
         warnings,
       },
       requestId,

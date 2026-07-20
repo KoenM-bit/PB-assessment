@@ -13,6 +13,8 @@ import {
 } from "recharts";
 import { CategoryShareCharts } from "../components/CategoryShareCharts";
 import { FeatureSkewCharts } from "../components/FeatureSkewCharts";
+import { LiveLabelledSalesTable } from "../components/LiveLabelledSalesTable";
+import { LiveMaeCharts } from "../components/LiveMaeCharts";
 import { api } from "../api/client";
 import type { MetricSet, ModelComparison, MonitoringData } from "../types";
 import { formatCurrency, formatDate, formatDurationMs, formatPercent } from "../utils/format";
@@ -67,7 +69,7 @@ export function MonitoringPage() {
   if (error) return <div className="error">{error}</div>;
   if (!data) return null;
 
-  const { summary, training, holdout_evaluation, live_evaluation, performance, data_quality, prediction_distribution, warnings, feature_monitoring, request_monitoring } = data;
+  const { summary, training, holdout_evaluation, live_evaluation, performance, data_quality, prediction_distribution, warnings, feature_monitoring, request_monitoring, live_labelled_sales } = data;
   const infrastructure = normalizeInfrastructure(data.infrastructure, "house-price-serving");
   const requests = request_monitoring ?? EMPTY_REQUEST_MONITORING;
   const deployStaleApi =
@@ -91,17 +93,7 @@ export function MonitoringPage() {
     },
   ];
 
-  const regionChartData = Object.entries(performance.by_region).map(([region, m]) => ({
-    region,
-    mae: Math.round(m.mae),
-    sample_size: m.sample_size,
-  }));
-
-  const propertyChartData = Object.entries(performance.by_property_type).map(([type, m]) => ({
-    type: type.replace(/_/g, " "),
-    mae: Math.round(m.mae),
-    sample_size: m.sample_size,
-  }));
+  const liveSales = live_labelled_sales;
 
   const latencyHistory = infrastructure.history.map((row) => ({
     ...row,
@@ -476,33 +468,27 @@ export function MonitoringPage() {
         </div>
       </div>
 
-      {regionChartData.length > 0 && (
+      {(liveSales?.sample_size ?? 0) > 0 && (
         <div className="card">
-          <h3>Live MAE by Region</h3>
-          <ResponsiveContainer width="100%" height={250}>
-            <BarChart data={regionChartData}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="region" />
-              <YAxis />
-              <Tooltip formatter={(v: number) => formatCurrency(v)} />
-              <Bar dataKey="mae" fill="#2563eb" />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      )}
-
-      {propertyChartData.length > 0 && (
-        <div className="card">
-          <h3>Live MAE by Property Type</h3>
-          <ResponsiveContainer width="100%" height={250}>
-            <BarChart data={propertyChartData}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="type" />
-              <YAxis />
-              <Tooltip formatter={(v: number) => formatCurrency(v)} />
-              <Bar dataKey="mae" fill="#7c3aed" />
-            </BarChart>
-          </ResponsiveContainer>
+          <h2>Live accuracy by segment</h2>
+          <p className="muted">
+            MAE on labelled sales (n={liveSales!.sample_size}) — compare regions and property types over time.
+          </p>
+          <div className="chart-row">
+            <LiveMaeCharts
+              title="Live MAE by region"
+              segments={liveSales!.by_region}
+              trends={liveSales!.region_mae_trends}
+              nameKey="region"
+            />
+            <LiveMaeCharts
+              title="Live MAE by property type"
+              segments={liveSales!.by_property_type}
+              trends={liveSales!.property_type_mae_trends}
+              nameKey="type"
+            />
+          </div>
+          <LiveLabelledSalesTable items={liveSales!.items} />
         </div>
       )}
     </>

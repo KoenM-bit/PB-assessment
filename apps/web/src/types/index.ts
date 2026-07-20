@@ -99,6 +99,55 @@ export interface ServingHistoryPoint {
   timeout_count: number;
 }
 
+export interface MaeTrendPoint {
+  date: string;
+  mae: number;
+  count: number;
+}
+
+export interface MaeTrendSeries {
+  label: string;
+  display_label: string;
+  points: MaeTrendPoint[];
+  trend_eur: number | null;
+  current_mae: number;
+  sample_size: number;
+}
+
+export interface MaeSegmentBar {
+  label: string;
+  display_label: string;
+  mae: number;
+  sample_size: number;
+  trend_eur: number | null;
+}
+
+export interface LiveLabelledSale {
+  prediction_id: string;
+  address: string;
+  region: string;
+  property_type: string;
+  surface_area: number;
+  predicted_price: number;
+  baseline_price: number;
+  actual_sale_price: number;
+  model_abs_error: number;
+  baseline_abs_error: number;
+  model_pct_error: number;
+  prediction_date: string;
+  sale_date: string | null;
+  beats_baseline: boolean;
+}
+
+export interface LiveLabelledMonitoring {
+  sample_size: number;
+  by_region: MaeSegmentBar[];
+  by_property_type: MaeSegmentBar[];
+  region_mae_trends: MaeTrendSeries[];
+  property_type_mae_trends: MaeTrendSeries[];
+  items: LiveLabelledSale[];
+}
+
 export interface CategoryShare {
   label: string;
   count: number;
@@ -237,6 +286,7 @@ export interface MonitoringData {
   prediction_distribution: { mean: number; count: number };
   feature_monitoring: FeatureMonitoringRow[];
   request_monitoring: RequestMonitoring;
+  live_labelled_sales?: LiveLabelledMonitoring;
   warnings: string[];
 }
 
