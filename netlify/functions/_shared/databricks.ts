@@ -172,6 +172,52 @@ export async function getServingMetricsHistory(
   }
 }
 
+export interface FeatureMonitoringRecord {
+  monitoring_date: string;
+  feature_name: string;
+  reference_mean: number;
+  reference_std: number;
+  recent_mean: number;
+  recent_std: number;
+  pct_out_of_range: number;
+  drift_score: number;
+  sample_size: number;
+}
+
+export async function getFeatureMonitoring(
+  config: AppConfig,
+  limit = 20,
+): Promise<FeatureMonitoringRecord[]> {
+  if (config.useMockDatabricks) {
+    return [];
+  }
+
+  try {
+    const rows = await querySql(
+      config,
+      `SELECT monitoring_date, feature_name, reference_mean, reference_std,
+              recent_mean, recent_std, pct_out_of_range, drift_score, sample_size
+       FROM ${config.catalog}.gold.feature_monitoring
+       ORDER BY monitoring_date DESC, feature_name
+       LIMIT ${limit}`,
+    );
+    return rows.map((row) => ({
+      monitoring_date: String(row.monitoring_date).slice(0, 10),
+      feature_name: String(row.feature_name),
+      reference_mean: Number(row.reference_mean ?? 0),
+      reference_std: Number(row.reference_std ?? 0),
+      recent_mean: Number(row.recent_mean ?? 0),
+      recent_std: Number(row.recent_std ?? 0),
+      pct_out_of_range: Number(row.pct_out_of_range ?? 0),
+      drift_score: Number(row.drift_score ?? 0),
+      sample_size: Number(row.sample_size ?? 0),
+    }));
+  } catch (err) {
+    console.warn("gold.feature_monitoring not available:", err);
+    return [];
+  }
+}
+
 export async function getActualSales(config: AppConfig): Promise<StoredActualSale[]> {
   if (config.useMockDatabricks) {
     return actualSales;

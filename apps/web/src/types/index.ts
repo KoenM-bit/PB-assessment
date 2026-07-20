@@ -98,6 +98,41 @@ export interface ServingHistoryPoint {
   timeout_count: number;
 }
 
+export interface CategoryShare {
+  label: string;
+  count: number;
+  share: number;
+  expected_share: number | null;
+  skew_pp: number | null;
+}
+
+export interface FeatureMonitoringRow {
+  monitoring_date: string;
+  feature_name: string;
+  reference_mean: number;
+  reference_std: number;
+  recent_mean: number;
+  recent_std: number;
+  pct_out_of_range: number;
+  drift_score: number;
+  sample_size: number;
+}
+
+export interface RequestMonitoring {
+  sample_size: number;
+  window_label: string;
+  by_region: CategoryShare[];
+  by_property_type: CategoryShare[];
+  numeric_features: {
+    feature: string;
+    recent_mean: number;
+    reference_mean: number;
+    pct_out_of_range: number;
+    sample_size: number;
+  }[];
+  warnings: string[];
+}
+
 export interface MonitoringData {
   summary: {
     total_predictions: number;
@@ -143,6 +178,8 @@ export interface MonitoringData {
   };
   data_quality: { missing_value_rate: number; out_of_range_rate: number };
   prediction_distribution: { mean: number; count: number };
+  feature_monitoring: FeatureMonitoringRow[];
+  request_monitoring: RequestMonitoring;
   warnings: string[];
 }
 

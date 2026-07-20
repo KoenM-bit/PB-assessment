@@ -15,6 +15,34 @@ import { api } from "../api/client";
 import type { MetricSet, ModelComparison, MonitoringData } from "../types";
 import { formatCurrency, formatDate, formatDurationMs, formatPercent } from "../utils/format";
 
+const EMPTY_LATENCY = { sample_size: 0, avg_ms: 0, p50_ms: 0, p95_ms: 0, max_ms: 0 };
+
+function normalizeInfrastructure(
+  raw: MonitoringData["infrastructure"] | undefined,
+  servingEndpointFallback: string,
+): MonitoringData["infrastructure"] {
+  return {
+    request_count: raw?.request_count ?? 0,
+    error_rate: raw?.error_rate ?? 0,
+    timeout_rate: raw?.timeout_rate ?? 0,
+    api_latency: raw?.api_latency ?? EMPTY_LATENCY,
+    fallback_rate: raw?.fallback_rate ?? 0,
+    daily: raw?.daily ?? [],
+    history: raw?.history ?? [],
+    databricks_endpoint: raw?.databricks_endpoint ?? null,
+    serving_endpoint: raw?.serving_endpoint ?? servingEndpointFallback,
+  };
+}
+
+const EMPTY_REQUEST_MONITORING: MonitoringData["request_monitoring"] = {
+  sample_size: 0,
+  window_label: "recent predictions",
+  by_region: [],
+  by_property_type: [],
+  numeric_features: [],
+  warnings: [],
+};
+
 export function MonitoringPage() {
   const [data, setData] = useState<MonitoringData | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -31,7 +59,11 @@ export function MonitoringPage() {
   if (error) return <div className="error">{error}</div>;
   if (!data) return null;
 
-  const { summary, training, holdout_evaluation, live_evaluation, performance, data_quality, prediction_distribution, warnings, infrastructure } = data;
+  const { summary, training, holdout_evaluation, live_evaluation, performance, data_quality, prediction_distribution, warnings, feature_monitoring, request_monitoring } = data;
+  const infrastructure = normalizeInfrastructure(data.infrastructure, "house-price-serving");
+  const requests = request_monitoring ?? EMPTY_REQUEST_MONITORING;
+  const deployStaleApi =
+    data.infrastructure != null && !("api_latency" in data.infrastructure);
 
   const holdoutChartData = [
     {
@@ -81,6 +113,12 @@ export function MonitoringPage() {
       {warnings.map((w) => (
         <div key={w} className="warning badge-warning">{w}</div>
       ))}
+
+      {deployStaleApi && (
+        <div className="warning badge-warning">
+          API is not on the latest monitoring version yet — redeploy Netlify functions (merge to staging or trigger deploy). Performance cards need the updated /api/monitoring.
+        </div>
+      )}
 
       <div className="card">
         <h2>Databricks &amp; API Performance</h2>
@@ -146,6 +184,12 @@ export function MonitoringPage() {
           <MetricCard label="Tracked requests" value={String(infrastructure.request_count)} />
         </div>
 
+        {infrastructure.api_latency.sample_size === 0 && (
+          <p className="muted">
+            No latency data yet — successful predictions are required in <code>gold.predictions</code>.
+          </p>
+        )}
+
         {latencyHistory.length > 0 && (
           <div className="chart-row">
             <div className="chart-panel">
@@ -179,6 +223,121 @@ export function MonitoringPage() {
               </div>
             )}
           </div>
+        )}
+      </div>
+
+      <div className="card">
+        <h2>Incoming requests vs training</h2>
+        <p className="muted">
+          Distribution of recent API payloads ({requests.window_label}, n={requests.sample_size}) compared to
+          training coverage. Large skew or out-of-range rates can signal data drift before model quality drops.
+        </p>
+
+        {requests.sample_size === 0 ? (
+          <p className="muted">No logged requests yet.</p>
+        ) : (
+          <>
+            <div className="chart-row">
+              <div className="chart-panel">
+                <h3>Share by region (%)</h3>
+                <ResponsiveContainer width="100%" height={260}>
+                  <BarChart
+                    data={requests.by_region
+                      .filter((r) => r.count > 0)
+                      .map((r) => ({
+                        region: r.label,
+                        live: Math.round(r.share * 1000) / 10,
+                        expected: r.expected_share != null ? Math.round(r.expected_share * 1000) / 10 : 0,
+                      }))}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="region" />
+                    <YAxis unit="%" />
+                    <Tooltip formatter={(v: number) => `${v}%`} />
+                    <Legend />
+                    <Bar dataKey="live" name="Live requests" fill="#2563eb" />
+                    <Bar dataKey="expected" name="Uniform training ref." fill="#94a3b8" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="chart-panel">
+                <h3>Share by property type (%)</h3>
+                <ResponsiveContainer width="100%" height={260}>
+                  <BarChart
+                    data={requests.by_property_type
+                      .filter((r) => r.count > 0)
+                      .map((r) => ({
+                        type: r.label.replace(/_/g, " "),
+                        live: Math.round(r.share * 1000) / 10,
+                        expected: r.expected_share != null ? Math.round(r.expected_share * 1000) / 10 : 0,
+                      }))}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="type" />
+                    <YAxis unit="%" />
+                    <Tooltip formatter={(v: number) => `${v}%`} />
+                    <Legend />
+                    <Bar dataKey="live" name="Live requests" fill="#7c3aed" />
+                    <Bar dataKey="expected" name="Uniform training ref." fill="#94a3b8" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            {requests.numeric_features.length > 0 && (
+              <div className="table-wrap">
+                <h3>Numeric inputs vs training bounds</h3>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Feature</th>
+                      <th>Recent mean</th>
+                      <th>% outside p01–p99</th>
+                      <th>n</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {requests.numeric_features.map((row) => (
+                      <tr key={row.feature}>
+                        <td>{row.feature.replace(/_/g, " ")}</td>
+                        <td>{formatFeatureValue(row.feature, row.recent_mean)}</td>
+                        <td>{row.pct_out_of_range.toFixed(1)}%</td>
+                        <td>{row.sample_size}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {feature_monitoring.length > 0 && (
+              <div className="table-wrap">
+                <h3>Databricks feature monitoring (latest job run)</h3>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Feature</th>
+                      <th>Recent mean</th>
+                      <th>Reference mean</th>
+                      <th>% out of range</th>
+                      <th>Drift score</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {feature_monitoring.map((row) => (
+                      <tr key={row.feature_name}>
+                        <td>{row.feature_name.replace(/_/g, " ")}</td>
+                        <td>{row.recent_mean.toFixed(2)}</td>
+                        <td>{row.reference_mean.toFixed(2)}</td>
+                        <td>{row.pct_out_of_range.toFixed(1)}%</td>
+                        <td>{row.drift_score.toFixed(1)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </>
         )}
       </div>
 

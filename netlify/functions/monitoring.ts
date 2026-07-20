@@ -1,7 +1,7 @@
 import type { Handler, HandlerEvent } from "@netlify/functions";
 import { v4 as uuidv4 } from "uuid";
 import { getConfig } from "./_shared/config.js";
-import { getActualSales, getPredictions, getServingMetricsHistory } from "./_shared/databricks.js";
+import { getActualSales, getFeatureMonitoring, getPredictions, getServingMetricsHistory } from "./_shared/databricks.js";
 import { handleError, successResponse } from "./_shared/errors.js";
 import {
   baselinePredict,
@@ -14,6 +14,7 @@ import {
   fetchDatabricksEndpointMetrics,
   summarizeLatencies,
 } from "./_shared/serving_performance.js";
+import { buildRequestMonitoring } from "./_shared/request_monitoring.js";
 
 function computeMetrics(
   items: { predicted: number; actual: number }[],
@@ -84,11 +85,13 @@ export const handler: Handler = async (event: HandlerEvent) => {
   try {
     const config = getConfig();
     const manifest = loadTrainingManifest();
-    const [predictions, actuals, endpointMetrics, servingMetricsHistory] = await Promise.all([
+    const [predictions, actuals, endpointMetrics, servingMetricsHistory, featureMonitoring] =
+      await Promise.all([
       getPredictions(config, 500),
       getActualSales(config),
       fetchDatabricksEndpointMetrics(config),
       getServingMetricsHistory(config, 30),
+      getFeatureMonitoring(config, 30),
     ]);
     const actualMap = new Map(actuals.map((a) => [a.prediction_id, a]));
 
@@ -179,6 +182,16 @@ export const handler: Handler = async (event: HandlerEvent) => {
             timeout_count: 0,
           }));
 
+    const requestMonitoring = buildRequestMonitoring(predictions, manifest);
+    for (const w of requestMonitoring.warnings) {
+      if (!warnings.includes(w)) warnings.push(w);
+    }
+
+    const latestFeatureDate = featureMonitoring[0]?.monitoring_date;
+    const featureRows = latestFeatureDate
+      ? featureMonitoring.filter((row) => row.monitoring_date === latestFeatureDate)
+      : [];
+
     return successResponse(
       {
         summary: {
@@ -243,7 +256,8 @@ export const handler: Handler = async (event: HandlerEvent) => {
             : 0,
           count: predictions.length,
         },
-        feature_monitoring: [],
+        feature_monitoring: featureRows,
+        request_monitoring: requestMonitoring,
         warnings,
       },
       requestId,
