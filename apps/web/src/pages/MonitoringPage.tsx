@@ -126,13 +126,15 @@ export function MonitoringPage() {
         <p className="muted">
           Live metrics from endpoint{" "}
           <span className="badge">{infrastructure.serving_endpoint}</span>
-          {endpoint?.available
+          {endpoint?.has_metrics
             ? " (Databricks metrics API)"
-            : " — endpoint metrics unavailable; showing stored prediction latencies from gold.predictions"}
+            : endpoint?.available
+              ? " — Databricks metrics API reachable but no telemetry yet (endpoint idle or metrics reset). API latency below is from gold.predictions."
+              : " — endpoint metrics unavailable; showing stored prediction latencies from gold.predictions"}
         </p>
 
         <div className="metrics-grid">
-          {endpoint?.available && (
+          {endpoint?.has_metrics && (
             <>
               <MetricCard
                 label="Endpoint requests (total)"

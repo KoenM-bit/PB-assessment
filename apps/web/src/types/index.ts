@@ -87,6 +87,7 @@ export interface DatabricksEndpointMetrics {
   latency_p99_ms: number | null;
   cpu_usage_pct: number | null;
   memory_usage_pct: number | null;
+  has_metrics?: boolean;
 }
 
 export interface ServingHistoryPoint {

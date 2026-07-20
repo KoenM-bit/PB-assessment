@@ -20,7 +20,10 @@ export interface DailyServingPoint {
 
 export interface DatabricksEndpointMetrics {
   endpoint_name: string;
+  /** Metrics API responded (auth OK). */
   available: boolean;
+  /** Parsed at least one non-zero / non-null telemetry sample. */
+  has_metrics: boolean;
   request_count_total: number;
   error_4xx_total: number;
   error_5xx_total: number;
@@ -116,52 +119,88 @@ export function parseDatabricksServingMetrics(
   endpointName: string,
   body: string,
 ): DatabricksEndpointMetrics {
-  const buckets: { le: number; cumulative: number }[] = [];
+  const bucketTotals = new Map<number, number>();
   let requestCount = 0;
   let error4xx = 0;
   let error5xx = 0;
-  let cpu: number | null = null;
-  let mem: number | null = null;
+  const cpuSamples: number[] = [];
+  const memSamples: number[] = [];
   let histogramCount = 0;
+  let sawMetric = false;
+
+  const metricLine =
+    /^([a-zA-Z_:][\w:]*)(?:\{([^}]*)\})?\s+([+-]?\d*\.?\d+(?:[eE][+-]?\d+)?|NaN|\+Inf|-Inf)/;
 
   for (const line of body.split("\n")) {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith("#")) continue;
 
-    const gaugeMatch = trimmed.match(/^([a-zA-Z_:][\w:]*)\s+([+-]?\d*\.?\d+(?:[eE][+-]?\d+)?)/);
-    if (gaugeMatch && !trimmed.includes("{")) {
-      const name = gaugeMatch[1];
-      const value = parseMetricValue(gaugeMatch[2]);
-      if (name === "request_count_total") requestCount = value;
-      if (name === "request_4xx_count_total") error4xx = value;
-      if (name === "request_5xx_count_total") error5xx = value;
-      if (name === "cpu_usage_percentage") cpu = value;
-      if (name === "mem_usage_percentage") mem = value;
-      if (name === "request_latency_ms_count") histogramCount = value;
-      continue;
-    }
+    const match = trimmed.match(metricLine);
+    if (!match) continue;
 
-    const labeledMatch = trimmed.match(
-      /^([a-zA-Z_:][\w:]*)\{([^}]*)\}\s+([+-]?\d*\.?\d+(?:[eE][+-]?\d+)?)/,
-    );
-    if (!labeledMatch) continue;
+    const name = match[1];
+    const labels = match[2] ?? "";
+    const value = parseMetricValue(match[3]);
+    sawMetric = true;
 
-    const metricName = labeledMatch[1];
-    const labels = labeledMatch[2];
-    const value = parseMetricValue(labeledMatch[3]);
-
-    if (metricName === "request_latency_ms_bucket") {
-      const le = parseLe(labels);
-      if (le != null) buckets.push({ le, cumulative: value });
+    switch (name) {
+      case "request_count_total":
+        requestCount += value;
+        break;
+      case "request_4xx_count_total":
+        error4xx += value;
+        break;
+      case "request_5xx_count_total":
+        error5xx += value;
+        break;
+      case "cpu_usage_percentage":
+        cpuSamples.push(value);
+        break;
+      case "mem_usage_percentage":
+        memSamples.push(value);
+        break;
+      case "request_latency_ms_count":
+        histogramCount += value;
+        break;
+      case "request_latency_ms_bucket": {
+        const le = parseLe(labels);
+        if (le == null) break;
+        bucketTotals.set(le, (bucketTotals.get(le) ?? 0) + value);
+        break;
+      }
+      default:
+        break;
     }
   }
+
+  const buckets = [...bucketTotals.entries()]
+    .map(([le, cumulative]) => ({ le, cumulative }))
+    .sort((a, b) => a.le - b.le);
 
   const p50 = histogramQuantile(buckets, 0.5, histogramCount);
   const p99 = histogramQuantile(buckets, 0.99, histogramCount);
 
+  const cpu =
+    cpuSamples.length > 0
+      ? cpuSamples.reduce((a, b) => a + b, 0) / cpuSamples.length
+      : null;
+  const mem =
+    memSamples.length > 0
+      ? memSamples.reduce((a, b) => a + b, 0) / memSamples.length
+      : null;
+
+  const hasMetrics =
+    requestCount > 0 ||
+    error4xx > 0 ||
+    error5xx > 0 ||
+    histogramCount > 0 ||
+    cpu != null ||
+    mem != null;
+
   return {
     endpoint_name: endpointName,
-    available: true,
+    available: sawMetric || body.trim().length > 0,
+    has_metrics: hasMetrics,
     request_count_total: Math.round(requestCount),
     error_4xx_total: Math.round(error4xx),
     error_5xx_total: Math.round(error5xx),
@@ -189,6 +228,7 @@ export async function fetchDatabricksEndpointMetrics(
       return {
         endpoint_name: config.servingEndpoint,
         available: false,
+        has_metrics: false,
         request_count_total: 0,
         error_4xx_total: 0,
         error_5xx_total: 0,
